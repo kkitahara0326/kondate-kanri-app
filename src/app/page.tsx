@@ -2,11 +2,11 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
+  closestCenter,
   DndContext,
   DragOverlay,
   PointerSensor,
   TouchSensor,
-  pointerWithin,
   useDraggable,
   useDroppable,
   useSensor,
@@ -196,6 +196,8 @@ export default function HomePage() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
   const [draft, setDraft] = useState<MenuDraft>(() => emptyDraft(0));
+  const [draftRecipeUrlInput, setDraftRecipeUrlInput] = useState('');
+  const [draftIngredientInput, setDraftIngredientInput] = useState('');
 
   const menusByDay = useMemo(() => {
     const base = new Map<DayOfWeek, MenuItem[]>();
@@ -267,7 +269,48 @@ export default function HomePage() {
       if (menu && ingredients.length > 0) setMenuIngredients(menu.id, ingredients);
     }
     setEditorOpen(false);
+    setDraftRecipeUrlInput('');
+    setDraftIngredientInput('');
   };
+
+  const addDraftRecipeUrl = () => {
+    const t = draftRecipeUrlInput.trim();
+    if (!t) return;
+    setDraft((d) => {
+      const lines = parseUrls(d.recipeUrlsText);
+      return { ...d, recipeUrlsText: [...lines, t].join('\n') };
+    });
+    setDraftRecipeUrlInput('');
+  };
+
+  const removeDraftRecipeUrlAt = (idx: number) => {
+    setDraft((d) => {
+      const lines = parseUrls(d.recipeUrlsText);
+      lines.splice(idx, 1);
+      return { ...d, recipeUrlsText: lines.join('\n') };
+    });
+  };
+
+  const addDraftIngredient = () => {
+    const t = draftIngredientInput.trim();
+    if (!t) return;
+    setDraft((d) => {
+      const lines = parseLines(d.ingredientsText);
+      return { ...d, ingredientsText: [...lines, t].join('\n') };
+    });
+    setDraftIngredientInput('');
+  };
+
+  const removeDraftIngredientAt = (idx: number) => {
+    setDraft((d) => {
+      const lines = parseLines(d.ingredientsText);
+      lines.splice(idx, 1);
+      return { ...d, ingredientsText: lines.join('\n') };
+    });
+  };
+
+  const draftRecipeUrls = useMemo(() => parseUrls(draft.recipeUrlsText), [draft.recipeUrlsText]);
+  const draftIngredients = useMemo(() => parseLines(draft.ingredientsText), [draft.ingredientsText]);
 
   return (
     <div className="min-h-dvh px-3 pb-12 pt-2 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
@@ -411,6 +454,156 @@ export default function HomePage() {
               ＋ レシピを追加
             </button>
 
+            {editorOpen && !editingMenuId ? (
+              <div className="mt-4 rounded-2xl border border-zinc-200/80 bg-zinc-50/60 p-4 shadow-sm dark:border-zinc-700/70 dark:bg-zinc-900/40">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">メニュー名</label>
+                    <input
+                      value={draft.title}
+                      onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLInputElement).blur();
+                        }
+                      }}
+                      className="mt-2 w-full rounded-xl border-2 border-zinc-300 bg-white px-4 py-3 text-base dark:border-zinc-600 dark:bg-zinc-950"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">曜日</label>
+                    <select
+                      value={draft.day}
+                      onChange={(e) => setDraft((d) => ({ ...d, day: Number(e.target.value) as DayOfWeek }))}
+                      className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                    >
+                      {DAYS.map((d) => (
+                        <option key={d.key} value={d.key}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">レシピURL</label>
+                    <div className="mt-1 flex gap-2">
+                      <input
+                        type="url"
+                        value={draftRecipeUrlInput}
+                        onChange={(e) => setDraftRecipeUrlInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            addDraftRecipeUrl();
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                        }}
+                        className="min-h-10 min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                      />
+                      <button
+                        type="button"
+                        onClick={addDraftRecipeUrl}
+                        className="min-h-10 shrink-0 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white transition hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400"
+                      >
+                        追加
+                      </button>
+                    </div>
+                    {draftRecipeUrls.length > 0 ? (
+                      <ul className="mt-2 divide-y divide-zinc-200 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-700 dark:bg-zinc-950">
+                        {draftRecipeUrls.map((u, idx) => (
+                          <li key={`${u}-${idx}`} className="flex items-center gap-2 px-3 py-2">
+                            <span className="min-w-0 flex-1 truncate text-sm">{u}</span>
+                            <button
+                              type="button"
+                              onClick={() => removeDraftRecipeUrlAt(idx)}
+                              className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                            >
+                              削除
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">買い物チェックリスト</label>
+                    <div className="mt-1 flex gap-2">
+                      <input
+                        value={draftIngredientInput}
+                        onChange={(e) => setDraftIngredientInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            addDraftIngredient();
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                        }}
+                        className="min-h-10 min-w-0 flex-1 rounded-xl border border-amber-300/80 bg-white px-3 py-2 text-sm dark:border-amber-700 dark:bg-zinc-950"
+                      />
+                      <button
+                        type="button"
+                        onClick={addDraftIngredient}
+                        className="min-h-10 shrink-0 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white transition hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-400"
+                      >
+                        追加
+                      </button>
+                    </div>
+                    {draftIngredients.length > 0 ? (
+                      <ul className="mt-2 divide-y divide-zinc-200 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-700 dark:bg-zinc-950">
+                        {draftIngredients.map((item, idx) => (
+                          <li key={`${item}-${idx}`} className="flex items-center gap-2 px-3 py-2">
+                            <span className="min-w-0 flex-1 truncate text-sm">{item}</span>
+                            <button
+                              type="button"
+                              onClick={() => removeDraftIngredientAt(idx)}
+                              className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                            >
+                              削除
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">メモ</label>
+                    <textarea
+                      value={draft.notes}
+                      onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
+                      rows={3}
+                      className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-end gap-2 border-t border-zinc-200/70 pt-3 dark:border-zinc-700/70">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditorOpen(false);
+                      setDraftRecipeUrlInput('');
+                      setDraftIngredientInput('');
+                    }}
+                    className="rounded-xl px-4 py-2 text-sm font-semibold text-zinc-600 transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveMenu}
+                    className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-2 text-sm font-bold text-white shadow-md shadow-emerald-900/20 transition hover:from-emerald-700 hover:to-teal-700 dark:from-emerald-500 dark:to-teal-500"
+                  >
+                    保存
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-4 space-y-4">
               <GlobalChecklistPanel
                 title="その他の買い物チェックリスト"
@@ -435,7 +628,7 @@ export default function HomePage() {
         </PlannerDndWrapper>
 
         <Modal
-        open={editorOpen}
+        open={editorOpen && Boolean(editingMenuId)}
         title={editingMenuId ? 'メニュー編集' : 'メニュー追加'}
         onClose={() => setEditorOpen(false)}
       >
@@ -552,7 +745,7 @@ function PlannerDndWrapper({
 
   return (
     <DndContext
-      collisionDetection={pointerWithin}
+      collisionDetection={closestCenter}
       sensors={sensors}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
