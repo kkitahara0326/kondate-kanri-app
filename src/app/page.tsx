@@ -313,7 +313,7 @@ export default function HomePage() {
   const draftIngredients = useMemo(() => parseLines(draft.ingredientsText), [draft.ingredientsText]);
 
   return (
-    <div className="min-h-dvh px-3 pb-12 pt-2 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+    <div className="min-h-[100svh] w-full overflow-x-hidden px-3 pb-8 pt-2 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
       <div className="mx-auto max-w-6xl space-y-8">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
           <span className="bg-gradient-to-r from-emerald-700 to-teal-600 bg-clip-text text-transparent dark:from-emerald-300 dark:to-teal-300">
@@ -1088,14 +1088,14 @@ function CollapsedMenuBar({
             type="button"
             onClick={onToggle}
             onPointerDown={(e) => e.stopPropagation()}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100/70 text-zinc-600 transition hover:bg-zinc-200/70 dark:bg-zinc-800/60 dark:hover:bg-zinc-700/60 dark:text-zinc-100"
             aria-label={collapsed ? '開く' : '閉じる'}
             title={collapsed ? '開く' : '閉じる'}
           >
-            <span className="text-lg leading-none">{collapsed ? '▸' : '▾'}</span>
+            <span className="text-xl leading-none">{collapsed ? '▸' : '▾'}</span>
           </button>
         ) : (
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">{collapsed ? '▸' : '▾'}</span>
+          <span className="text-base text-zinc-500 dark:text-zinc-400">{collapsed ? '▸' : '▾'}</span>
         )}
       </div>
     </div>
@@ -1194,11 +1194,11 @@ function MenuCardBody({
             <button
               type="button"
               onClick={onToggleCollapsed}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100/70 text-zinc-600 transition hover:bg-zinc-200/70 dark:bg-zinc-800/60 dark:hover:bg-zinc-700/60 dark:text-zinc-100"
               aria-label="折りたたむ"
               title="折りたたむ"
             >
-              <span className="text-lg">▾</span>
+              <span className="text-xl leading-none">▾</span>
             </button>
           </div>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
