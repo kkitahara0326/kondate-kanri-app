@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -71,8 +71,8 @@ function dragListenersExceptInteractive(
     ...rest,
     onPointerDown: (e: ReactPointerEvent<Element>) => {
       const el = e.target as HTMLElement | null;
-      if (el?.closest('button, a, input, textarea, select, label, [data-no-dnd]'))
-        return;
+      // ドラッグ開始はハンドル限定にしてスクロールと干渉させない
+      if (!el?.closest('[data-drag-handle]')) return;
       onPointerDown(e);
     },
   };
@@ -188,6 +188,7 @@ export default function HomePage() {
   const [activeDragMenuId, setActiveDragMenuId] = useState<string | null>(null);
   const [activeDragWidth, setActiveDragWidth] = useState<number | null>(null);
   const [collapsedByMenuId, setCollapsedByMenuId] = useState<Record<string, boolean>>({});
+  const lastAppliedGapIndexRef = useRef<number | null>(null);
 
   /** ドラッグ中、挿入ラインのインデックス（0 = 先頭の前、length = 末尾） */
   const [dragOverGapIndex, setDragOverGapIndex] = useState<number | null>(null);
@@ -337,25 +338,35 @@ export default function HomePage() {
         onDragStart={(e) => {
           const id = String(e.active.id);
           setActiveDragMenuId(id);
+          lastAppliedGapIndexRef.current = null;
           const escaped = globalThis.CSS?.escape ? globalThis.CSS.escape(id) : id.replace(/"/g, '\\"');
           const el = document.querySelector<HTMLElement>(`[data-menu-id="${escaped}"]`);
           const w = el?.getBoundingClientRect().width;
           setActiveDragWidth(w && Number.isFinite(w) ? w : null);
         }}
         onDragOver={(e) => {
+          const activeId = String(e.active.id);
           const overId = e.over?.id ? String(e.over.id) : '';
           const m = /^insert-at:(\d+)$/.exec(overId);
-          setDragOverGapIndex(m ? Number(m[1]) : null);
+          const nextGap = m ? Number(m[1]) : null;
+          setDragOverGapIndex(nextGap);
+          // ドラッグ中に実際の順序も反映し、見た目をリアルタイムに入れ替える
+          if (nextGap === null) return;
+          if (lastAppliedGapIndexRef.current === nextGap) return;
+          moveMenuToFlatGapIndex(activeId, nextGap);
+          lastAppliedGapIndexRef.current = nextGap;
         }}
         onDragCancel={() => {
           setActiveDragMenuId(null);
           setActiveDragWidth(null);
           setDragOverGapIndex(null);
+          lastAppliedGapIndexRef.current = null;
         }}
         onDragEnd={() => {
           setActiveDragMenuId(null);
           setActiveDragWidth(null);
           setDragOverGapIndex(null);
+          lastAppliedGapIndexRef.current = null;
         }}
       >
           <div className="rounded-3xl border border-zinc-200/60 bg-white/90 p-4 shadow-lg shadow-zinc-900/[0.04] ring-1 ring-zinc-100/80 backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-900/60 dark:shadow-black/20 dark:ring-zinc-800/60">
@@ -597,9 +608,9 @@ function DraggableMenuCard({
         ref={setNodeRef}
         style={style}
         data-menu-id={menu.id}
-        className={`touch-none select-none rounded-2xl ${
+        className={`touch-auto select-none rounded-2xl ${
           isDragging ? 'px-3 py-2' : 'p-4'
-        } cursor-grab active:cursor-grabbing`}
+        }`}
         {...attributes}
         {...safeListeners}
       >
@@ -841,7 +852,17 @@ function CollapsedMenuBar({
   return (
     <div className={shellClass}>
       <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 flex-1 truncate font-bold tracking-tight">{title}</div>
+        <div className="flex min-w-0 flex-1 items-center gap-2 truncate font-bold tracking-tight">
+          <span
+            data-drag-handle
+            className="inline-flex shrink-0 cursor-grab touch-none text-zinc-400 active:cursor-grabbing dark:text-zinc-500"
+            aria-label="ドラッグして並べ替え"
+            title="ドラッグして並べ替え"
+          >
+            <DragGripIcon className="h-4 w-3" />
+          </span>
+          <span className="truncate">{title}</span>
+        </div>
         {onToggleDeleteMark && deleteMarkInputId ? (
           <ChecklistCompactRow
             id={deleteMarkInputId}
@@ -906,7 +927,7 @@ function MenuInsertGap({
     <div
       ref={setNodeRef}
       className={`rounded-full transition-all ${
-        active ? 'min-h-2 py-1.5' : 'min-h-0 py-0'
+        active ? 'min-h-4 py-3' : 'min-h-0 py-0'
       } ${hot ? 'bg-gradient-to-r from-emerald-400 to-teal-400 shadow-md shadow-emerald-600/25 ring-2 ring-white/50 dark:from-emerald-500 dark:to-teal-500' : active ? 'bg-zinc-200/60 dark:bg-zinc-700/50' : ''}`}
       aria-hidden
     />
@@ -965,10 +986,12 @@ function MenuCardBody({
     <div className="space-y-4">
       <div className="flex gap-3">
         <div
+          data-drag-handle
           className="mt-1 shrink-0 text-zinc-300 dark:text-zinc-600"
-          aria-hidden
+          aria-label="ドラッグして並べ替え"
+          title="ドラッグして並べ替え"
         >
-          <DragGripIcon className="h-5 w-3.5" />
+          <DragGripIcon className="h-5 w-3.5 cursor-grab touch-none active:cursor-grabbing" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
