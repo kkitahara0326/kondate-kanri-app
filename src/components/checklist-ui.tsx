@@ -253,7 +253,7 @@ export function ChecklistAddBar({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={inputAriaLabel}
-        className={`min-h-10 min-w-0 flex-1 rounded-xl border-0 bg-zinc-100/80 px-3 py-2 text-sm outline-none ring-1 ring-zinc-200/80 transition placeholder:text-zinc-400 focus:bg-white focus:ring-2 dark:bg-zinc-800/80 dark:ring-zinc-700 dark:focus:bg-zinc-950 ${FOCUS_RING[accent]}`}
+        className={`min-h-10 min-w-0 flex-1 rounded-xl border-0 bg-zinc-100/80 px-3 py-2 text-base outline-none ring-1 ring-zinc-200/80 transition placeholder:text-zinc-400 focus:bg-white focus:ring-2 dark:bg-zinc-800/80 dark:ring-zinc-700 dark:focus:bg-zinc-950 ${FOCUS_RING[accent]}`}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault();

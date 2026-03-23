@@ -477,7 +477,7 @@ export default function HomePage() {
                     <select
                       value={draft.day}
                       onChange={(e) => setDraft((d) => ({ ...d, day: Number(e.target.value) as DayOfWeek }))}
-                      className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                      className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-base dark:border-zinc-700 dark:bg-zinc-950"
                     >
                       {DAYS.map((d) => (
                         <option key={d.key} value={d.key}>
@@ -501,7 +501,7 @@ export default function HomePage() {
                             (e.currentTarget as HTMLInputElement).blur();
                           }
                         }}
-                        className="min-h-10 min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                        className="min-h-10 min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2 text-base dark:border-zinc-700 dark:bg-zinc-950"
                       />
                       <button
                         type="button"
@@ -542,7 +542,7 @@ export default function HomePage() {
                             (e.currentTarget as HTMLInputElement).blur();
                           }
                         }}
-                        className="min-h-10 min-w-0 flex-1 rounded-xl border border-amber-300/80 bg-white px-3 py-2 text-sm dark:border-amber-700 dark:bg-zinc-950"
+                        className="min-h-10 min-w-0 flex-1 rounded-xl border border-amber-300/80 bg-white px-3 py-2 text-base dark:border-amber-700 dark:bg-zinc-950"
                       />
                       <button
                         type="button"
@@ -576,7 +576,7 @@ export default function HomePage() {
                       value={draft.notes}
                       onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
                       rows={3}
-                      className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+                      className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-base dark:border-zinc-700 dark:bg-zinc-950"
                     />
                   </div>
                 </div>
