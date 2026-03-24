@@ -5,6 +5,7 @@ import type { PlannerDataV4 } from '@/lib/types';
 import {
   getPlannerData,
   initialSyncPlannerFromFirestore,
+  runRecipeImageMigrationOnce,
   subscribePlanner,
   subscribePlannerLocal,
 } from '@/lib/planner-storage';
@@ -45,9 +46,10 @@ export function PlannerSyncProvider({ children }: { children: React.ReactNode })
     let unsubCloud: (() => void) | null = null;
 
     initialSyncPlannerFromFirestore()
-      .then(() => setSynced(true))
-      .catch(() => setSynced(true))
+      .catch(() => {})
+      .then(() => runRecipeImageMigrationOnce())
       .finally(() => {
+        setSynced(true);
         setData(getPlannerData());
         unsubCloud = subscribePlanner((next) => {
           setHasCloud(true);

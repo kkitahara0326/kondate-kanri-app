@@ -11,8 +11,13 @@ import type {
   RecipeImage,
 } from '@/lib/types';
 import { getFirestoreDb, getStorageService } from '@/lib/firebase';
+import {
+  deleteRecipeImageBlob,
+  deleteRecipeImageBlobsForMenu,
+  putRecipeImageBlob,
+} from '@/lib/recipe-image-blobs';
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
-import { deleteObject, getDownloadURL, ref, uploadString } from 'firebase/storage';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 const STORAGE_KEY = 'kondate-planner-data';
 const UPDATED_EVENT = 'kondate-planner-updated';
@@ -88,6 +93,82 @@ function normalizePlannerV4(d: PlannerDataV4): PlannerDataV4 {
     otherShopping: Array.isArray(d.otherShopping) ? d.otherShopping : [],
     todos: Array.isArray(d.todos) ? d.todos : [],
   };
+}
+
+/** localStorage / Firestore には載せない（巨大 base64 によるフリーズ・課金枠超過を防ぐ） */
+function sanitizePlannerForPersistence(d: PlannerDataV4): PlannerDataV4 {
+  return {
+    ...d,
+    menus: d.menus.map((m) => ({
+      ...m,
+      recipeImages: (m.recipeImages ?? []).map((img) => {
+        const { dataUrl: _drop, ...rest } = img;
+        return rest;
+      }),
+    })),
+  };
+}
+
+async function migrateLegacyEmbeddedRecipeImages(data: PlannerDataV4): Promise<{
+  next: PlannerDataV4;
+  changed: boolean;
+}> {
+  let changed = false;
+  const menus = await Promise.all(
+    data.menus.map(async (m) => {
+      if (!m.recipeImages?.length) return m;
+      const images = await Promise.all(
+        m.recipeImages.map(async (img) => {
+          if (img.downloadUrl || img.storagePath) {
+            if (img.dataUrl) changed = true;
+            const { dataUrl: _, ...rest } = img;
+            return rest;
+          }
+          const du = img.dataUrl?.trim();
+          if (du && du.length >= 32) {
+            try {
+              const res = await fetch(du);
+              const blob = await res.blob();
+              if (blob && blob.size > 0) {
+                await putRecipeImageBlob(m.id, img.id, blob);
+                changed = true;
+                return {
+                  id: img.id,
+                  name: img.name,
+                  createdAt: img.createdAt,
+                  localOnly: true,
+                } satisfies RecipeImage;
+              }
+              return img;
+            } catch {
+              return img;
+            }
+          }
+          if (img.dataUrl) {
+            changed = true;
+            const { dataUrl: _, ...rest } = img;
+            return img.localOnly ? { ...rest, localOnly: true } : rest;
+          }
+          return img;
+        })
+      );
+      return { ...m, recipeImages: images };
+    })
+  );
+  return { next: { ...data, menus }, changed };
+}
+
+/** 起動時・初回同期後に1回以上呼び出し、旧 dataUrl を IndexedDB へ移して軽量化する */
+export async function runRecipeImageMigrationOnce(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    const cur = getPlannerData();
+    const { next, changed } = await migrateLegacyEmbeddedRecipeImages(cur);
+    if (!changed) return;
+    savePlannerData(next);
+  } catch {
+    // ignore
+  }
 }
 
 /** ローカル／クラウドの任意バージョンを正規化した v4 に統一 */
@@ -221,6 +302,7 @@ function migrateToV2(parsed: PlannerData): PlannerDataV2 {
                 id: String(r.id ?? ''),
                 name: String(r.name ?? 'image'),
                 dataUrl: String(r.dataUrl ?? '') || undefined,
+                localOnly: Boolean(r.localOnly),
                 storagePath: String(r.storagePath ?? '') || undefined,
                 downloadUrl: String(r.downloadUrl ?? '') || undefined,
                 createdAt: Number(r.createdAt ?? now()),
@@ -228,7 +310,11 @@ function migrateToV2(parsed: PlannerData): PlannerDataV2 {
             })
             .filter(
               (img: RecipeImage) =>
-                Boolean(img.id) && (Boolean(img.downloadUrl) || Boolean(img.storagePath) || Boolean(img.dataUrl))
+                Boolean(img.id) &&
+                (Boolean(img.downloadUrl) ||
+                  Boolean(img.storagePath) ||
+                  Boolean(img.dataUrl) ||
+                  Boolean(img.localOnly))
             )
         : [],
       createdAt: Number(obj.createdAt ?? now()),
@@ -290,10 +376,11 @@ export function getPlannerData(): PlannerDataV4 {
 
 export function savePlannerData(data: PlannerDataV4): void {
   if (typeof window === 'undefined') return;
-  const next: PlannerDataV4 = normalizePlannerV4({ ...data, version: 4, updatedAt: now() });
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  window.dispatchEvent(new CustomEvent(UPDATED_EVENT, { detail: next }));
-  uploadToFirestore(next);
+  const normalized = normalizePlannerV4({ ...data, version: 4, updatedAt: now() });
+  const persisted = sanitizePlannerForPersistence(normalized);
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+  window.dispatchEvent(new CustomEvent(UPDATED_EVENT, { detail: persisted }));
+  uploadToFirestore(persisted);
 }
 
 export async function initialSyncPlannerFromFirestore(): Promise<void> {
@@ -365,10 +452,16 @@ export function subscribePlanner(onChange: (data: PlannerDataV4) => void): () =>
       const cloud = parseCloudData(snap.data());
       if (!cloud) return;
       const local = getPlannerData();
-      // 古いスナップショットで最新ローカルを巻き戻さない
       if ((cloud.updatedAt ?? 0) < (local.updatedAt ?? 0)) return;
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cloud));
-      onChange(cloud);
+      void (async () => {
+        const { next, changed } = await migrateLegacyEmbeddedRecipeImages(cloud);
+        const localAfter = getPlannerData();
+        if ((cloud.updatedAt ?? 0) < (localAfter.updatedAt ?? 0)) return;
+        const persisted = sanitizePlannerForPersistence(next);
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+        onChange(next);
+        if (changed) uploadToFirestore(persisted);
+      })();
     },
     () => {
       // ignore
@@ -450,23 +543,21 @@ function sanitizeFileName(name: string): string {
   return name.replace(/[^\w.\-]+/g, '_').slice(0, 120) || 'image.jpg';
 }
 
-export async function addRecipeImage(menuId: string, input: { name: string; dataUrl: string }): Promise<void> {
+export async function addRecipeImage(menuId: string, input: { name: string; blob: Blob }): Promise<void> {
   const name = input.name.trim();
-  const dataUrl = input.dataUrl.trim();
-  if (!name || !dataUrl) return;
+  if (!name || input.blob.size === 0) return;
   const ts = now();
   const imageId = nextId('rimg-');
   let storagePath: string | undefined;
   let downloadUrl: string | undefined;
 
-  // 課金なし（Spark）環境では Storage が使えないため、失敗時は dataUrl 保存へフォールバック
   const storage = getStorageService();
   if (storage) {
     try {
       const fileName = sanitizeFileName(name);
       storagePath = `recipe-images/${menuId}/${ts}-${imageId}-${fileName}`;
       const storageRef = ref(storage, storagePath);
-      await uploadString(storageRef, dataUrl, 'data_url');
+      await uploadBytes(storageRef, input.blob, { contentType: 'image/jpeg' });
       downloadUrl = await getDownloadURL(storageRef);
     } catch {
       storagePath = undefined;
@@ -474,17 +565,16 @@ export async function addRecipeImage(menuId: string, input: { name: string; data
     }
   }
 
+  if (!downloadUrl) {
+    await putRecipeImageBlob(menuId, imageId, input.blob);
+  }
+
   const data = getPlannerData();
   const nextMenus = data.menus.map((m) => {
     if (m.id !== menuId) return m;
-    const next: RecipeImage = {
-      id: imageId,
-      name,
-      storagePath,
-      downloadUrl,
-      dataUrl: downloadUrl ? undefined : dataUrl,
-      createdAt: ts,
-    };
+    const next: RecipeImage = downloadUrl
+      ? { id: imageId, name, storagePath, downloadUrl, createdAt: ts }
+      : { id: imageId, name, localOnly: true, createdAt: ts };
     const images = [...(m.recipeImages ?? []), next];
     return { ...m, recipeImages: images, updatedAt: ts };
   });
@@ -495,6 +585,7 @@ export async function removeRecipeImage(menuId: string, imageId: string): Promis
   const data = getPlannerData();
   const menu = data.menus.find((m) => m.id === menuId);
   const target = menu?.recipeImages?.find((img) => img.id === imageId);
+  await deleteRecipeImageBlob(menuId, imageId).catch(() => {});
   if (target?.storagePath) {
     const storage = getStorageService();
     if (storage) {
@@ -522,6 +613,7 @@ export function deleteMenu(menuId: string): void {
     menus: data.menus.filter((m) => m.id !== menuId),
     basket: data.basket.filter((b) => b.menuId !== menuId),
   });
+  void deleteRecipeImageBlobsForMenu(menuId);
 }
 
 export function toggleMenuDeleteMarked(menuId: string): void {
@@ -543,6 +635,9 @@ export function removeDeleteMarkedMenus(): void {
     menus: data.menus.filter((m) => !m.deleteMarked),
     basket: data.basket.filter((b) => !removeIds.has(b.menuId)),
   });
+  for (const id of removeIds) {
+    void deleteRecipeImageBlobsForMenu(id);
+  }
 }
 
 /** メニューをドラッグ&ドロップ等で移動（曜日/順番の変更 + 再採番） */

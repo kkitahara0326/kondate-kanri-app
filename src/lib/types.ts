@@ -11,8 +11,10 @@ export interface Ingredient {
 export interface RecipeImage {
   id: string;
   name: string;
-  /** 旧データ互換: Firestoreへ直接保存していたbase64 */
+  /** 旧データ互換（移行後は永続化しない） */
   dataUrl?: string;
+  /** Storage 未使用時: 画像バイナリは IndexedDB のみ。同期ドキュメントには出ない */
+  localOnly?: boolean;
   /** 本番運用: Firebase Storage上のオブジェクトパス */
   storagePath?: string;
   /** 本番運用: Firebase StorageのダウンロードURL */

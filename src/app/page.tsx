@@ -1,6 +1,14 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import {
   closestCenter,
   DndContext,
@@ -18,7 +26,9 @@ import {
   type DraggableSyntheticListeners,
 } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import type { DayOfWeek, GlobalChecklistItem, MenuItem } from '@/lib/types';
+import type { DayOfWeek, GlobalChecklistItem, MenuItem, RecipeImage } from '@/lib/types';
+import { compressImageFileToJpegBlob } from '@/lib/image-compress';
+import { getRecipeImageBlob } from '@/lib/recipe-image-blobs';
 import { DAYS } from '@/lib/types';
 import { usePlannerSync } from '@/components/planner-sync-provider';
 import {
@@ -92,7 +102,7 @@ function emptyDraft(day: DayOfWeek): MenuDraft {
   return { title: '', day, recipeUrlsText: '', ingredientsText: '', notes: '' };
 }
 
-type DraftPendingImage = { id: string; name: string; dataUrl: string };
+type DraftPendingImage = { id: string; name: string; blob: Blob; previewUrl: string };
 
 function parseLines(text: string): string[] {
   return text
@@ -247,12 +257,18 @@ export default function HomePage() {
   const openCreate = (day: DayOfWeek) => {
     setEditingMenuId(null);
     setDraft(emptyDraft(day));
-    setDraftPendingImages([]);
+    setDraftPendingImages((prev) => {
+      for (const p of prev) URL.revokeObjectURL(p.previewUrl);
+      return [];
+    });
     setEditorOpen(true);
   };
 
   const openEdit = (menu: MenuItem) => {
-    setDraftPendingImages([]);
+    setDraftPendingImages((prev) => {
+      for (const p of prev) URL.revokeObjectURL(p.previewUrl);
+      return [];
+    });
     setEditingMenuId(menu.id);
     setDraft({
       title: menu.title,
@@ -297,7 +313,8 @@ export default function HomePage() {
       if (menu) {
         if (ingredients.length > 0) setMenuIngredients(menu.id, ingredients);
         for (const img of draftPendingImages) {
-          await addRecipeImage(menu.id, { name: img.name, dataUrl: img.dataUrl });
+          await addRecipeImage(menu.id, { name: img.name, blob: img.blob });
+          URL.revokeObjectURL(img.previewUrl);
         }
       }
       setDraftPendingImages([]);
@@ -315,12 +332,13 @@ export default function HomePage() {
     if (!file) return;
     setDraftImageBusy(true);
     try {
-      const dataUrl = await compressImageToDataUrl(file);
+      const blob = await compressImageFileToJpegBlob(file);
       const id =
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
           : `pimg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      setDraftPendingImages((prev) => [...prev, { id, name: file.name || 'recipe-image.jpg', dataUrl }]);
+      const previewUrl = URL.createObjectURL(blob);
+      setDraftPendingImages((prev) => [...prev, { id, name: file.name || 'recipe-image.jpg', blob, previewUrl }]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -329,7 +347,11 @@ export default function HomePage() {
   };
 
   const removeDraftPendingImage = (id: string) => {
-    setDraftPendingImages((prev) => prev.filter((p) => p.id !== id));
+    setDraftPendingImages((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((p) => p.id !== id);
+    });
   };
 
   const addDraftRecipeUrl = () => {
@@ -659,7 +681,7 @@ export default function HomePage() {
                             key={img.id}
                             className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900"
                           >
-                            <img src={img.dataUrl} alt="" className="h-28 w-full object-cover" />
+                            <img src={img.previewUrl} alt="" className="h-28 w-full object-cover" />
                             <div className="flex items-center justify-end gap-2 px-2 py-1.5">
                               <button
                                 type="button"
@@ -693,7 +715,10 @@ export default function HomePage() {
                       setEditorOpen(false);
                       setDraftRecipeUrlInput('');
                       setDraftIngredientInput('');
-                      setDraftPendingImages([]);
+                      setDraftPendingImages((p) => {
+                        for (const x of p) URL.revokeObjectURL(x.previewUrl);
+                        return [];
+                      });
                     }}
                     className="rounded-xl px-4 py-2 text-sm font-semibold text-zinc-600 transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   >
@@ -1002,30 +1027,6 @@ function RecipeUrlAdder({ menu }: { menu: MenuItem }) {
   );
 }
 
-async function compressImageToDataUrl(file: File, maxSize = 1280, quality = 0.82): Promise<string> {
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
-      i.src = objectUrl;
-    });
-    const scale = Math.min(1, maxSize / Math.max(img.naturalWidth, img.naturalHeight));
-    const width = Math.max(1, Math.round(img.naturalWidth * scale));
-    const height = Math.max(1, Math.round(img.naturalHeight * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('画像変換に失敗しました');
-    ctx.drawImage(img, 0, 0, width, height);
-    return canvas.toDataURL('image/jpeg', quality);
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-}
-
 function RecipeImageSection({ menu }: { menu: MenuItem }) {
   const [busy, setBusy] = useState(false);
   const images = menu.recipeImages ?? [];
@@ -1037,8 +1038,8 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
     if (!file) return;
     setBusy(true);
     try {
-      const dataUrl = await compressImageToDataUrl(file);
-      await addRecipeImage(menu.id, { name: file.name || 'recipe-image.jpg', dataUrl });
+      const blob = await compressImageFileToJpegBlob(file);
+      await addRecipeImage(menu.id, { name: file.name || 'recipe-image.jpg', blob });
     } finally {
       setBusy(false);
     }
@@ -1047,6 +1048,9 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
   return (
     <div className="mt-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
       <ChecklistSectionHeader title="レシピ画像" accent="emerald" />
+      <p className="mt-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+        無料利用時は画像は端末内のみ・同期はメタデータのみです。Firebase Storage が使える環境ではクラウドに保存されます。
+      </p>
       <div className="mt-3 flex items-center gap-2">
         <input
           id={inputId}
@@ -1065,31 +1069,79 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
       {images.length > 0 ? (
         <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {images.map((img) => (
-            <li key={img.id} className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-              <img src={img.downloadUrl ?? img.dataUrl} alt={img.name} className="h-28 w-full object-cover" />
-              <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-                <a
-                  href={img.downloadUrl ?? img.dataUrl}
-                  download={img.name}
-                  className="truncate text-xs font-medium text-emerald-700 hover:underline dark:text-emerald-300"
-                >
-                  保存
-                </a>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void removeRecipeImage(menu.id, img.id);
-                  }}
-                  className="rounded-md px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                >
-                  削除
-                </button>
-              </div>
-            </li>
+            <RecipeImageCard key={img.id} menuId={menu.id} menu={menu} img={img} />
           ))}
         </ul>
       ) : null}
     </div>
+  );
+}
+
+function RecipeImageCard({ menuId, menu, img }: { menuId: string; menu: MenuItem; img: RecipeImage }) {
+  const [displaySrc, setDisplaySrc] = useState<string | null>(() => img.downloadUrl ?? img.dataUrl ?? null);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+
+    const run = async () => {
+      if (img.downloadUrl || img.dataUrl) {
+        setDisplaySrc(img.downloadUrl ?? img.dataUrl ?? null);
+        return;
+      }
+      if (img.localOnly) {
+        const blob = await getRecipeImageBlob(menuId, img.id);
+        if (cancelled) return;
+        if (!blob) {
+          setDisplaySrc(null);
+          return;
+        }
+        objectUrl = URL.createObjectURL(blob);
+        setDisplaySrc(objectUrl);
+        return;
+      }
+      setDisplaySrc(null);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [menuId, img.id, img.downloadUrl, img.dataUrl, img.localOnly]);
+
+  return (
+    <li className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+      {displaySrc ? (
+        <img src={displaySrc} alt={img.name} className="h-28 w-full object-cover" />
+      ) : (
+        <div className="flex h-28 w-full items-center justify-center bg-zinc-100 px-2 text-center text-[11px] leading-snug text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+          {img.localOnly ? 'この端末に保存された画像（他端末では表示されません）' : '画像を表示できません'}
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+        {displaySrc ? (
+          <a
+            href={displaySrc}
+            download={img.name}
+            className="truncate text-xs font-medium text-emerald-700 hover:underline dark:text-emerald-300"
+          >
+            保存
+          </a>
+        ) : (
+          <span className="truncate text-xs text-zinc-400 dark:text-zinc-500">—</span>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            void removeRecipeImage(menu.id, img.id);
+          }}
+          className="rounded-md px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          削除
+        </button>
+      </div>
+    </li>
   );
 }
 
