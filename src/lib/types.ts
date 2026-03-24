@@ -8,6 +8,18 @@ export interface Ingredient {
   checked?: boolean;
 }
 
+export interface RecipeImage {
+  id: string;
+  name: string;
+  /** 旧データ互換: Firestoreへ直接保存していたbase64 */
+  dataUrl?: string;
+  /** 本番運用: Firebase Storage上のオブジェクトパス */
+  storagePath?: string;
+  /** 本番運用: Firebase StorageのダウンロードURL */
+  downloadUrl?: string;
+  createdAt: number;
+}
+
 export interface MenuItem {
   id: string;
   title: string;
@@ -17,6 +29,7 @@ export interface MenuItem {
   recipeUrls: string[];
   ingredients: Ingredient[];
   notes: string;
+  recipeImages?: RecipeImage[];
   createdAt: number;
   updatedAt: number;
   /** チェック後に一覧からまとめて削除するための印 */

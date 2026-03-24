@@ -8,9 +8,11 @@ import type {
   PlannerDataV2,
   PlannerDataV3,
   PlannerDataV4,
+  RecipeImage,
 } from '@/lib/types';
-import { getFirestoreDb } from '@/lib/firebase';
+import { getFirestoreDb, getStorageService } from '@/lib/firebase';
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
+import { deleteObject, getDownloadURL, ref, uploadString } from 'firebase/storage';
 
 const STORAGE_KEY = 'kondate-planner-data';
 const UPDATED_EVENT = 'kondate-planner-updated';
@@ -211,6 +213,24 @@ function migrateToV2(parsed: PlannerData): PlannerDataV2 {
             .filter((i: Ingredient) => Boolean(i.text))
         : [],
       notes: String(obj.notes ?? ''),
+      recipeImages: Array.isArray(obj.recipeImages)
+        ? obj.recipeImages
+            .map((img: unknown) => {
+              const r = (img ?? {}) as Record<string, unknown>;
+              return {
+                id: String(r.id ?? ''),
+                name: String(r.name ?? 'image'),
+                dataUrl: String(r.dataUrl ?? '') || undefined,
+                storagePath: String(r.storagePath ?? '') || undefined,
+                downloadUrl: String(r.downloadUrl ?? '') || undefined,
+                createdAt: Number(r.createdAt ?? now()),
+              } satisfies RecipeImage;
+            })
+            .filter(
+              (img: RecipeImage) =>
+                Boolean(img.id) && (Boolean(img.downloadUrl) || Boolean(img.storagePath) || Boolean(img.dataUrl))
+            )
+        : [],
       createdAt: Number(obj.createdAt ?? now()),
       updatedAt: Number(obj.updatedAt ?? now()),
       deleteMarked: Boolean(obj.deleteMarked),
@@ -393,6 +413,7 @@ export function addMenu(
     recipeUrls: (input.recipeUrls ?? []).map((u) => u.trim()).filter(Boolean),
     ingredients: [],
     notes: (input.notes ?? '').trim(),
+    recipeImages: [],
     createdAt: ts,
     updatedAt: ts,
     deleteMarked: false,
@@ -404,7 +425,7 @@ export function addMenu(
 
 export function updateMenu(
   menuId: string,
-  patch: Partial<Pick<MenuItem, 'title' | 'day' | 'notes' | 'recipeUrls' | 'order'>>
+  patch: Partial<Pick<MenuItem, 'title' | 'day' | 'notes' | 'recipeUrls' | 'order' | 'recipeImages'>>
 ): void {
   const data = getPlannerData();
   const ts = now();
@@ -418,6 +439,76 @@ export function updateMenu(
       notes: patch.notes !== undefined ? patch.notes.trim() : m.notes,
       recipeUrls:
         patch.recipeUrls !== undefined ? patch.recipeUrls.map((u) => u.trim()).filter(Boolean) : m.recipeUrls,
+      recipeImages: patch.recipeImages !== undefined ? patch.recipeImages : m.recipeImages ?? [],
+      updatedAt: ts,
+    };
+  });
+  savePlannerData({ ...data, menus: nextMenus });
+}
+
+function sanitizeFileName(name: string): string {
+  return name.replace(/[^\w.\-]+/g, '_').slice(0, 120) || 'image.jpg';
+}
+
+export async function addRecipeImage(menuId: string, input: { name: string; dataUrl: string }): Promise<void> {
+  const name = input.name.trim();
+  const dataUrl = input.dataUrl.trim();
+  if (!name || !dataUrl) return;
+  const ts = now();
+  const imageId = nextId('rimg-');
+  let storagePath: string | undefined;
+  let downloadUrl: string | undefined;
+
+  // 課金なし（Spark）環境では Storage が使えないため、失敗時は dataUrl 保存へフォールバック
+  const storage = getStorageService();
+  if (storage) {
+    try {
+      const fileName = sanitizeFileName(name);
+      storagePath = `recipe-images/${menuId}/${ts}-${imageId}-${fileName}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadString(storageRef, dataUrl, 'data_url');
+      downloadUrl = await getDownloadURL(storageRef);
+    } catch {
+      storagePath = undefined;
+      downloadUrl = undefined;
+    }
+  }
+
+  const data = getPlannerData();
+  const nextMenus = data.menus.map((m) => {
+    if (m.id !== menuId) return m;
+    const next: RecipeImage = {
+      id: imageId,
+      name,
+      storagePath,
+      downloadUrl,
+      dataUrl: downloadUrl ? undefined : dataUrl,
+      createdAt: ts,
+    };
+    const images = [...(m.recipeImages ?? []), next];
+    return { ...m, recipeImages: images, updatedAt: ts };
+  });
+  savePlannerData({ ...data, menus: nextMenus });
+}
+
+export async function removeRecipeImage(menuId: string, imageId: string): Promise<void> {
+  const data = getPlannerData();
+  const menu = data.menus.find((m) => m.id === menuId);
+  const target = menu?.recipeImages?.find((img) => img.id === imageId);
+  if (target?.storagePath) {
+    const storage = getStorageService();
+    if (storage) {
+      await deleteObject(ref(storage, target.storagePath)).catch(() => {
+        // 画像ファイルが存在しない/権限不足でもメタデータ削除は継続
+      });
+    }
+  }
+  const ts = now();
+  const nextMenus = data.menus.map((m) => {
+    if (m.id !== menuId) return m;
+    return {
+      ...m,
+      recipeImages: (m.recipeImages ?? []).filter((img) => img.id !== imageId),
       updatedAt: ts,
     };
   });

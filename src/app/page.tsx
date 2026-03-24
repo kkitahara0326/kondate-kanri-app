@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   closestCenter,
   DndContext,
@@ -36,6 +36,7 @@ import {
   addIngredient,
   addMenu,
   addOtherShoppingItem,
+  addRecipeImage,
   addTodoItem,
   appendRecipeUrl,
   getPlannerData,
@@ -46,6 +47,7 @@ import {
   removeCheckedOtherShopping,
   removeCheckedTodos,
   removeDeleteMarkedMenus,
+  removeRecipeImage,
   savePlannerData,
   setMenuDay,
   setMenuIngredients,
@@ -243,6 +245,18 @@ export default function HomePage() {
     setEditorOpen(true);
   };
 
+  const openEdit = (menu: MenuItem) => {
+    setEditingMenuId(menu.id);
+    setDraft({
+      title: menu.title,
+      day: menu.day,
+      recipeUrlsText: menu.recipeUrls.join('\n'),
+      ingredientsText: menu.ingredients.map((i) => i.text).join('\n'),
+      notes: menu.notes ?? '',
+    });
+    setEditorOpen(true);
+  };
+
   const saveMenu = () => {
     const recipeUrls = parseUrls(draft.recipeUrlsText);
     const ingredients = parseLines(draft.ingredientsText);
@@ -433,6 +447,7 @@ export default function HomePage() {
                     menu={m}
                     activeDragMenuId={activeDragMenuId}
                     isCollapsed={(collapsedByMenuId[m.id] ?? true) === true}
+                    onEdit={() => openEdit(m)}
                     onToggleCollapsed={() =>
                       setCollapsedByMenuId((prev) => ({ ...prev, [m.id]: !prev[m.id] }))
                     }
@@ -878,13 +893,105 @@ function RecipeUrlAdder({ menu }: { menu: MenuItem }) {
                 href={u}
                 target="_blank"
                 rel="noreferrer"
-                className="block truncate py-2.5 text-sm font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300"
+                className="block break-all py-2.5 text-sm font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300"
               >
                 {u}
               </a>
             </ChecklistListItem>
           ))}
         </ChecklistList>
+      ) : null}
+    </div>
+  );
+}
+
+async function compressImageToDataUrl(file: File, maxSize = 1280, quality = 0.82): Promise<string> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('画像の読み込みに失敗しました'));
+      i.src = objectUrl;
+    });
+    const scale = Math.min(1, maxSize / Math.max(img.naturalWidth, img.naturalHeight));
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('画像変換に失敗しました');
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL('image/jpeg', quality);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function RecipeImageSection({ menu }: { menu: MenuItem }) {
+  const [busy, setBusy] = useState(false);
+  const images = menu.recipeImages ?? [];
+  const inputId = `recipe-image-input-${menu.id}`;
+
+  const handleSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.currentTarget.value = '';
+    if (!file) return;
+    setBusy(true);
+    try {
+      const dataUrl = await compressImageToDataUrl(file);
+      await addRecipeImage(menu.id, { name: file.name || 'recipe-image.jpg', dataUrl });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+      <ChecklistSectionHeader title="レシピ画像" accent="emerald" />
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          id={inputId}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleSelect}
+          className="sr-only"
+        />
+        <label
+          htmlFor={inputId}
+          className="inline-flex min-h-10 cursor-pointer items-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] dark:bg-emerald-500 dark:hover:bg-emerald-400"
+        >
+          {busy ? '保存中...' : '画像を追加'}
+        </label>
+      </div>
+      {images.length > 0 ? (
+        <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {images.map((img) => (
+            <li key={img.id} className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+              <img src={img.downloadUrl ?? img.dataUrl} alt={img.name} className="h-28 w-full object-cover" />
+              <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+                <a
+                  href={img.downloadUrl ?? img.dataUrl}
+                  download={img.name}
+                  className="truncate text-xs font-medium text-emerald-700 hover:underline dark:text-emerald-300"
+                >
+                  保存
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void removeRecipeImage(menu.id, img.id);
+                  }}
+                  className="rounded-md px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  削除
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </div>
   );
@@ -1131,11 +1238,13 @@ function PlannerMenuRow({
   menu: m,
   activeDragMenuId,
   isCollapsed,
+  onEdit,
   onToggleCollapsed,
 }: {
   menu: MenuItem;
   activeDragMenuId: string | null;
   isCollapsed: boolean;
+  onEdit: () => void;
   onToggleCollapsed: () => void;
 }) {
   return (
@@ -1157,7 +1266,7 @@ function PlannerMenuRow({
               deleteMarkInputId={`menu-del-${m.id}`}
             />
           ) : (
-            <MenuCardBody menu={m} onToggleCollapsed={onToggleCollapsed} />
+            <MenuCardBody menu={m} onEdit={onEdit} onToggleCollapsed={onToggleCollapsed} />
           )}
         </DraggableMenuCard>
       )}
@@ -1167,9 +1276,11 @@ function PlannerMenuRow({
 
 function MenuCardBody({
   menu,
+  onEdit,
   onToggleCollapsed,
 }: {
   menu: MenuItem;
+  onEdit: () => void;
   onToggleCollapsed: () => void;
 }) {
   const ingredientCount = menu.ingredients.length;
@@ -1191,15 +1302,26 @@ function MenuCardBody({
             <h2 className="text-lg font-bold leading-snug tracking-tight text-zinc-900 dark:text-zinc-50">
               {menu.title}
             </h2>
-            <button
-              type="button"
-              onClick={onToggleCollapsed}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100/70 text-zinc-600 transition hover:bg-zinc-200/70 dark:bg-zinc-800/60 dark:hover:bg-zinc-700/60 dark:text-zinc-100"
-              aria-label="折りたたむ"
-              title="折りたたむ"
-            >
-              <span className="text-xl leading-none">▾</span>
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={onEdit}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100/70 text-zinc-600 transition hover:bg-zinc-200/70 dark:bg-zinc-800/60 dark:hover:bg-zinc-700/60 dark:text-zinc-100"
+                aria-label="メニューを編集"
+                title="メニューを編集"
+              >
+                <span className="text-lg leading-none">✎</span>
+              </button>
+              <button
+                type="button"
+                onClick={onToggleCollapsed}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100/70 text-zinc-600 transition hover:bg-zinc-200/70 dark:bg-zinc-800/60 dark:hover:bg-zinc-700/60 dark:text-zinc-100"
+                aria-label="折りたたむ"
+                title="折りたたむ"
+              >
+                <span className="text-xl leading-none">▾</span>
+              </button>
+            </div>
           </div>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             レシピ {recipeCount}件 · 買い物 {ingredientCount}件
@@ -1222,6 +1344,7 @@ function MenuCardBody({
       </p>
 
       <RecipeUrlAdder menu={menu} />
+      <RecipeImageSection menu={menu} />
       <IngredientSection menu={menu} />
       <MenuNotesField menu={menu} />
     </div>

@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 本アプリのレシピ画像のみ許可
+    match /recipe-images/{menuId}/{fileName} {
+      // 認証導入前提のため、まずは開発運用向けに許可。
+      // 本番で認証を導入したら request.auth ベースに切り替えること。
+      allow read, write: if true;
+    }
+
+    // それ以外は拒否
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
