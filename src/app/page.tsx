@@ -92,6 +92,8 @@ function emptyDraft(day: DayOfWeek): MenuDraft {
   return { title: '', day, recipeUrlsText: '', ingredientsText: '', notes: '' };
 }
 
+type DraftPendingImage = { id: string; name: string; dataUrl: string };
+
 function parseLines(text: string): string[] {
   return text
     .split(/\r?\n/)
@@ -200,6 +202,9 @@ export default function HomePage() {
   const [draft, setDraft] = useState<MenuDraft>(() => emptyDraft(0));
   const [draftRecipeUrlInput, setDraftRecipeUrlInput] = useState('');
   const [draftIngredientInput, setDraftIngredientInput] = useState('');
+  const [draftPendingImages, setDraftPendingImages] = useState<DraftPendingImage[]>([]);
+  const [draftImageBusy, setDraftImageBusy] = useState(false);
+  const [saveMenuSubmitting, setSaveMenuSubmitting] = useState(false);
 
   const menusByDay = useMemo(() => {
     const base = new Map<DayOfWeek, MenuItem[]>();
@@ -242,10 +247,12 @@ export default function HomePage() {
   const openCreate = (day: DayOfWeek) => {
     setEditingMenuId(null);
     setDraft(emptyDraft(day));
+    setDraftPendingImages([]);
     setEditorOpen(true);
   };
 
   const openEdit = (menu: MenuItem) => {
+    setDraftPendingImages([]);
     setEditingMenuId(menu.id);
     setDraft({
       title: menu.title,
@@ -257,7 +264,7 @@ export default function HomePage() {
     setEditorOpen(true);
   };
 
-  const saveMenu = () => {
+  const saveMenu = async () => {
     const recipeUrls = parseUrls(draft.recipeUrlsText);
     const ingredients = parseLines(draft.ingredientsText);
     if (editingMenuId) {
@@ -273,18 +280,56 @@ export default function HomePage() {
         recipeUrls,
       });
       setMenuIngredients(editingMenuId, ingredients);
-    } else {
+      setEditorOpen(false);
+      setDraftRecipeUrlInput('');
+      setDraftIngredientInput('');
+      return;
+    }
+
+    setSaveMenuSubmitting(true);
+    try {
       const menu = addMenu({
         title: draft.title,
         day: draft.day,
         notes: draft.notes,
         recipeUrls,
       });
-      if (menu && ingredients.length > 0) setMenuIngredients(menu.id, ingredients);
+      if (menu) {
+        if (ingredients.length > 0) setMenuIngredients(menu.id, ingredients);
+        for (const img of draftPendingImages) {
+          await addRecipeImage(menu.id, { name: img.name, dataUrl: img.dataUrl });
+        }
+      }
+      setDraftPendingImages([]);
+      setEditorOpen(false);
+      setDraftRecipeUrlInput('');
+      setDraftIngredientInput('');
+    } finally {
+      setSaveMenuSubmitting(false);
     }
-    setEditorOpen(false);
-    setDraftRecipeUrlInput('');
-    setDraftIngredientInput('');
+  };
+
+  const onDraftRecipeImageSelected = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.currentTarget.value = '';
+    if (!file) return;
+    setDraftImageBusy(true);
+    try {
+      const dataUrl = await compressImageToDataUrl(file);
+      const id =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `pimg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      setDraftPendingImages((prev) => [...prev, { id, name: file.name || 'recipe-image.jpg', dataUrl }]);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDraftImageBusy(false);
+    }
+  };
+
+  const removeDraftPendingImage = (id: string) => {
+    setDraftPendingImages((prev) => prev.filter((p) => p.id !== id));
   };
 
   const addDraftRecipeUrl = () => {
@@ -470,9 +515,9 @@ export default function HomePage() {
             </button>
 
             {editorOpen && !editingMenuId ? (
-              <div className="mt-4 rounded-2xl border border-zinc-200/80 bg-zinc-50/60 p-4 shadow-sm dark:border-zinc-700/70 dark:bg-zinc-900/40">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="sm:col-span-2">
+              <div className="mt-4 min-w-0 max-w-full overflow-x-hidden rounded-2xl border border-zinc-200/80 bg-zinc-50/60 p-4 shadow-sm dark:border-zinc-700/70 dark:bg-zinc-900/40">
+                <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                  <div className="min-w-0 sm:col-span-2">
                     <label className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">メニュー名</label>
                     <input
                       value={draft.title}
@@ -502,9 +547,9 @@ export default function HomePage() {
                     </select>
                   </div>
 
-                  <div className="sm:col-span-2">
+                  <div className="min-w-0 sm:col-span-2">
                     <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">レシピURL</label>
-                    <div className="mt-1 flex gap-2">
+                    <div className="mt-1 flex min-w-0 gap-2">
                       <input
                         type="url"
                         value={draftRecipeUrlInput}
@@ -516,7 +561,7 @@ export default function HomePage() {
                             (e.currentTarget as HTMLInputElement).blur();
                           }
                         }}
-                        className="min-h-10 min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2 text-base dark:border-zinc-700 dark:bg-zinc-950"
+                        className="min-h-10 min-w-0 max-w-full flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2 text-base dark:border-zinc-700 dark:bg-zinc-950"
                       />
                       <button
                         type="button"
@@ -529,12 +574,12 @@ export default function HomePage() {
                     {draftRecipeUrls.length > 0 ? (
                       <ul className="mt-2 divide-y divide-zinc-200 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-700 dark:bg-zinc-950">
                         {draftRecipeUrls.map((u, idx) => (
-                          <li key={`${u}-${idx}`} className="flex items-center gap-2 px-3 py-2">
-                            <span className="min-w-0 flex-1 truncate text-sm">{u}</span>
+                          <li key={`${u}-${idx}`} className="flex items-start gap-2 px-3 py-2">
+                            <span className="min-w-0 flex-1 break-all text-sm leading-snug">{u}</span>
                             <button
                               type="button"
                               onClick={() => removeDraftRecipeUrlAt(idx)}
-                              className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                              className="shrink-0 rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                             >
                               削除
                             </button>
@@ -544,9 +589,9 @@ export default function HomePage() {
                     ) : null}
                   </div>
 
-                  <div className="sm:col-span-2">
+                  <div className="min-w-0 sm:col-span-2">
                     <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">買い物チェックリスト</label>
-                    <div className="mt-1 flex gap-2">
+                    <div className="mt-1 flex min-w-0 gap-2">
                       <input
                         value={draftIngredientInput}
                         onChange={(e) => setDraftIngredientInput(e.target.value)}
@@ -557,7 +602,7 @@ export default function HomePage() {
                             (e.currentTarget as HTMLInputElement).blur();
                           }
                         }}
-                        className="min-h-10 min-w-0 flex-1 rounded-xl border border-amber-300/80 bg-white px-3 py-2 text-base dark:border-amber-700 dark:bg-zinc-950"
+                        className="min-h-10 min-w-0 max-w-full flex-1 rounded-xl border border-amber-300/80 bg-white px-3 py-2 text-base dark:border-amber-700 dark:bg-zinc-950"
                       />
                       <button
                         type="button"
@@ -570,12 +615,12 @@ export default function HomePage() {
                     {draftIngredients.length > 0 ? (
                       <ul className="mt-2 divide-y divide-zinc-200 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-700 dark:bg-zinc-950">
                         {draftIngredients.map((item, idx) => (
-                          <li key={`${item}-${idx}`} className="flex items-center gap-2 px-3 py-2">
-                            <span className="min-w-0 flex-1 truncate text-sm">{item}</span>
+                          <li key={`${item}-${idx}`} className="flex items-start gap-2 px-3 py-2">
+                            <span className="min-w-0 flex-1 break-words text-sm leading-snug">{item}</span>
                             <button
                               type="button"
                               onClick={() => removeDraftIngredientAt(idx)}
-                              className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                              className="shrink-0 rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                             >
                               削除
                             </button>
@@ -585,7 +630,53 @@ export default function HomePage() {
                     ) : null}
                   </div>
 
-                  <div className="sm:col-span-2">
+                  <div className="min-w-0 sm:col-span-2">
+                    <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">レシピ画像</label>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                      保存するとこの献立に登録されます（カメラ・アルバムから選択可）
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <input
+                        id="draft-recipe-image-input"
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(e) => {
+                          void onDraftRecipeImageSelected(e);
+                        }}
+                        className="sr-only"
+                      />
+                      <label
+                        htmlFor="draft-recipe-image-input"
+                        className="inline-flex min-h-10 cursor-pointer items-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] dark:bg-emerald-500 dark:hover:bg-emerald-400"
+                      >
+                        {draftImageBusy ? '処理中...' : '画像を追加'}
+                      </label>
+                    </div>
+                    {draftPendingImages.length > 0 ? (
+                      <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {draftPendingImages.map((img) => (
+                          <li
+                            key={img.id}
+                            className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900"
+                          >
+                            <img src={img.dataUrl} alt="" className="h-28 w-full object-cover" />
+                            <div className="flex items-center justify-end gap-2 px-2 py-1.5">
+                              <button
+                                type="button"
+                                onClick={() => removeDraftPendingImage(img.id)}
+                                className="rounded-md px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                              >
+                                削除
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+
+                  <div className="min-w-0 sm:col-span-2">
                     <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">メモ</label>
                     <textarea
                       value={draft.notes}
@@ -603,6 +694,7 @@ export default function HomePage() {
                       setEditorOpen(false);
                       setDraftRecipeUrlInput('');
                       setDraftIngredientInput('');
+                      setDraftPendingImages([]);
                     }}
                     className="rounded-xl px-4 py-2 text-sm font-semibold text-zinc-600 transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                   >
@@ -610,10 +702,13 @@ export default function HomePage() {
                   </button>
                   <button
                     type="button"
-                    onClick={saveMenu}
-                    className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-2 text-sm font-bold text-white shadow-md shadow-emerald-900/20 transition hover:from-emerald-700 hover:to-teal-700 dark:from-emerald-500 dark:to-teal-500"
+                    disabled={saveMenuSubmitting}
+                    onClick={() => {
+                      void saveMenu();
+                    }}
+                    className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-2 text-sm font-bold text-white shadow-md shadow-emerald-900/20 transition hover:from-emerald-700 hover:to-teal-700 disabled:cursor-not-allowed disabled:opacity-60 dark:from-emerald-500 dark:to-teal-500"
                   >
-                    保存
+                    {saveMenuSubmitting ? '保存中...' : '保存'}
                   </button>
                 </div>
               </div>
@@ -656,7 +751,7 @@ export default function HomePage() {
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
           <div>
             <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">曜日</label>
             <select
@@ -672,7 +767,7 @@ export default function HomePage() {
             </select>
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="min-w-0 sm:col-span-2">
             <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
               レシピURL（1行に1つ）
             </label>
@@ -680,7 +775,7 @@ export default function HomePage() {
               value={draft.recipeUrlsText}
               onChange={(e) => setDraft((d) => ({ ...d, recipeUrlsText: e.target.value }))}
               rows={4}
-              className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+              className="mt-1 w-full min-w-0 max-w-full break-all rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
             />
           </div>
 
@@ -715,10 +810,13 @@ export default function HomePage() {
             キャンセル
           </button>
           <button
-            onClick={saveMenu}
-            className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-2.5 text-sm font-bold text-white shadow-md shadow-emerald-900/20 transition hover:from-emerald-700 hover:to-teal-700 dark:from-emerald-500 dark:to-teal-500"
+            disabled={saveMenuSubmitting}
+            onClick={() => {
+              void saveMenu();
+            }}
+            className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-2.5 text-sm font-bold text-white shadow-md shadow-emerald-900/20 transition hover:from-emerald-700 hover:to-teal-700 disabled:cursor-not-allowed disabled:opacity-60 dark:from-emerald-500 dark:to-teal-500"
           >
-            保存
+            {saveMenuSubmitting ? '保存中...' : '保存'}
           </button>
         </div>
         </Modal>
@@ -816,7 +914,7 @@ function DraggableMenuCard({
         ref={setNodeRef}
         style={style}
         data-menu-id={menu.id}
-        className={`touch-auto select-none rounded-2xl ${
+        className={`touch-auto min-w-0 select-none rounded-2xl ${
           isDragging ? 'px-3 py-2' : 'p-4'
         }`}
         {...attributes}
@@ -875,7 +973,7 @@ function RecipeUrlAdder({ menu }: { menu: MenuItem }) {
     setUrl('');
   };
   return (
-    <div className="mt-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+    <div className="mt-4 min-w-0 border-t border-zinc-100 pt-4 dark:border-zinc-800">
       <ChecklistSectionHeader title="レシピURL" accent="emerald" />
       <ChecklistAddBar
         value={url}
