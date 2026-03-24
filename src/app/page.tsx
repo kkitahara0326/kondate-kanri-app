@@ -689,9 +689,6 @@ export default function HomePage() {
 
                   <div className="min-w-0 sm:col-span-2">
                     <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">レシピ画像</label>
-                    <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                      保存するとこの献立に登録されます（写真・スクリーンショットはフォトから、撮影はカメラから選べます）
-                    </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <input
                         id="draft-recipe-image-input"
@@ -1094,10 +1091,6 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
   return (
     <div className="mt-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
       <ChecklistSectionHeader title="レシピ画像" accent="emerald" />
-      <p className="mt-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-        無料利用時は画像は端末内のみ・同期はメタデータのみです。約220KB以下の画像は圧縮を省略して速く保存します。Firebase
-        Storage が使える環境ではクラウドに保存されます。
-      </p>
       <div className="mt-3 flex items-center gap-2">
         <input
           id={inputId}
@@ -1364,7 +1357,7 @@ function CollapsedMenuBar({
             id={deleteMarkInputId}
             checked={Boolean(deleteMarked)}
             onChange={() => onToggleDeleteMark()}
-            label="削除予定"
+            label=""
             accent="rose"
             ariaLabel="献立を削除予定にチェック"
             onPointerDown={(e) => e.stopPropagation()}
