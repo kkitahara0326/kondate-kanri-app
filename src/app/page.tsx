@@ -45,11 +45,10 @@ import {
 } from '@/components/checklist-ui';
 import {
   addIngredient,
-  addMenu,
+  addMenuWithDetails,
   addOtherShoppingItem,
   addRecipeImage,
   addTodoItem,
-  applyMenuIngredientsAndRecipeImages,
   appendRecipeUrl,
   getPlannerData,
   moveMenu,
@@ -306,20 +305,15 @@ export default function HomePage() {
 
     setSaveMenuSubmitting(true);
     try {
-      const menu = addMenu({
+      const menu = await addMenuWithDetails({
         title: draft.title,
         day: draft.day,
         notes: draft.notes,
         recipeUrls,
+        ingredientTexts: ingredients,
+        recipeImageBlobs: draftPendingImages.map((p) => ({ name: p.name, blob: p.blob })),
       });
       if (menu) {
-        if (ingredients.length > 0 || draftPendingImages.length > 0) {
-          await applyMenuIngredientsAndRecipeImages(
-            menu.id,
-            ingredients,
-            draftPendingImages.map((p) => ({ name: p.name, blob: p.blob }))
-          );
-        }
         for (const img of draftPendingImages) {
           URL.revokeObjectURL(img.previewUrl);
         }

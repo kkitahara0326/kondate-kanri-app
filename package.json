@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "deploy": "npm run build && firebase deploy --only hosting",
+    "deploy:all": "npm run build && firebase deploy --only \"hosting,storage\""
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

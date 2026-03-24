@@ -563,6 +563,70 @@ export function addMenu(
   return menu;
 }
 
+/**
+ * 新規献立を「1回の savePlannerData」で追加（食材・画像込み）。
+ * addMenu → apply の2重 stringify / 再レンダーを避ける。
+ */
+export async function addMenuWithDetails(input: {
+  title: string;
+  day: MenuItem['day'];
+  notes?: string;
+  recipeUrls?: string[];
+  ingredientTexts?: string[];
+  recipeImageBlobs?: { name: string; blob: Blob }[];
+}): Promise<MenuItem | null> {
+  const data = getPlannerData();
+  const t = input.title.trim();
+  if (!t) return null;
+  const ts = now();
+  const menuId = nextId('menu-');
+
+  const dayMenus = data.menus.filter((m) => m.day === input.day);
+  const nextOrder = dayMenus.length > 0 ? Math.max(...dayMenus.map((m) => m.order)) + 1 : 0;
+
+  const texts = input.ingredientTexts ?? [];
+  const ingredients: Ingredient[] = texts
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((text) => ({ id: nextId('ing-'), text, createdAt: ts, checked: false }));
+
+  const blobs = input.recipeImageBlobs ?? [];
+
+  const imageResults = await Promise.all(
+    blobs.map(async (row) => {
+      const name = row.name.trim();
+      if (!name || row.blob.size === 0) return null;
+      const imageTs = now();
+      const imageId = nextId('rimg-');
+      await putRecipeImageBlob(menuId, imageId, row.blob);
+      scheduleRecipeImageCloudUpload(menuId, imageId, name, row.blob, imageTs);
+      const img: RecipeImage = { id: imageId, name, localOnly: true, createdAt: imageTs };
+      return img;
+    })
+  );
+
+  const recipeImages = imageResults.filter((x): x is RecipeImage => x !== null);
+
+  const menu: MenuItem = {
+    id: menuId,
+    title: t,
+    day: input.day,
+    order: nextOrder,
+    recipeUrls: (input.recipeUrls ?? []).map((u) => u.trim()).filter(Boolean),
+    ingredients,
+    notes: (input.notes ?? '').trim(),
+    recipeImages,
+    createdAt: ts,
+    updatedAt: ts,
+    deleteMarked: false,
+  };
+
+  const nextMenus = [...data.menus, menu];
+  await yieldToPaint();
+  savePlannerData({ ...data, menus: nextMenus });
+  return menu;
+}
+
 export function updateMenu(
   menuId: string,
   patch: Partial<Pick<MenuItem, 'title' | 'day' | 'notes' | 'recipeUrls' | 'order' | 'recipeImages'>>
@@ -590,6 +654,81 @@ function sanitizeFileName(name: string): string {
   return name.replace(/[^\w.\-]+/g, '_').slice(0, 120) || 'image.jpg';
 }
 
+/** Storage アップロードがネットワーク理由で終わらないと保存が永遠にブロックされるのを防ぐ */
+const RECIPE_IMAGE_STORAGE_TIMEOUT_MS = 20_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = window.setTimeout(() => reject(new Error('timeout')), ms);
+    promise
+      .then((v) => {
+        window.clearTimeout(t);
+        resolve(v);
+      })
+      .catch((e) => {
+        window.clearTimeout(t);
+        reject(e);
+      });
+  });
+}
+
+function patchMenuRecipeImageWithRemoteUrl(
+  menuId: string,
+  imageId: string,
+  fields: { storagePath: string; downloadUrl: string }
+): void {
+  const data = getPlannerData();
+  const menu = data.menus.find((m) => m.id === menuId);
+  const target = menu?.recipeImages?.find((i) => i.id === imageId);
+  if (!target || target.downloadUrl) return;
+
+  const nextMenus = data.menus.map((m) => {
+    if (m.id !== menuId) return m;
+    return {
+      ...m,
+      recipeImages: (m.recipeImages ?? []).map((i) =>
+        i.id === imageId
+          ? {
+              id: i.id,
+              name: i.name,
+              createdAt: i.createdAt,
+              storagePath: fields.storagePath,
+              downloadUrl: fields.downloadUrl,
+            }
+          : i
+      ),
+      updatedAt: now(),
+    };
+  });
+  savePlannerData({ ...data, menus: nextMenus });
+}
+
+/** 先に localOnly で保存したあと、Storage へ非同期アップロードして URL を追記する */
+function scheduleRecipeImageCloudUpload(
+  menuId: string,
+  imageId: string,
+  name: string,
+  blob: Blob,
+  imageTs: number
+): void {
+  const storage = getStorageService();
+  if (!storage) return;
+  void (async () => {
+    try {
+      const fileName = sanitizeFileName(name);
+      const storagePath = `recipe-images/${menuId}/${imageTs}-${imageId}-${fileName}`;
+      const storageRef = ref(storage, storagePath);
+      const downloadUrl = await withTimeout(
+        uploadBytes(storageRef, blob, { contentType: 'image/jpeg' }).then(() => getDownloadURL(storageRef)),
+        RECIPE_IMAGE_STORAGE_TIMEOUT_MS
+      );
+      patchMenuRecipeImageWithRemoteUrl(menuId, imageId, { storagePath, downloadUrl });
+    } catch {
+      // IndexedDB の Blob で表示継続
+    }
+  })();
+}
+
 async function yieldToPaint(): Promise<void> {
   await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
@@ -599,33 +738,14 @@ export async function addRecipeImage(menuId: string, input: { name: string; blob
   if (!name || input.blob.size === 0) return;
   const ts = now();
   const imageId = nextId('rimg-');
-  let storagePath: string | undefined;
-  let downloadUrl: string | undefined;
 
-  const storage = getStorageService();
-  if (storage) {
-    try {
-      const fileName = sanitizeFileName(name);
-      storagePath = `recipe-images/${menuId}/${ts}-${imageId}-${fileName}`;
-      const storageRef = ref(storage, storagePath);
-      await uploadBytes(storageRef, input.blob, { contentType: 'image/jpeg' });
-      downloadUrl = await getDownloadURL(storageRef);
-    } catch {
-      storagePath = undefined;
-      downloadUrl = undefined;
-    }
-  }
-
-  if (!downloadUrl) {
-    await putRecipeImageBlob(menuId, imageId, input.blob);
-  }
+  await putRecipeImageBlob(menuId, imageId, input.blob);
+  scheduleRecipeImageCloudUpload(menuId, imageId, name, input.blob, ts);
 
   const data = getPlannerData();
   const nextMenus = data.menus.map((m) => {
     if (m.id !== menuId) return m;
-    const next: RecipeImage = downloadUrl
-      ? { id: imageId, name, storagePath, downloadUrl, createdAt: ts }
-      : { id: imageId, name, localOnly: true, createdAt: ts };
+    const next: RecipeImage = { id: imageId, name, localOnly: true, createdAt: ts };
     const images = [...(m.recipeImages ?? []), next];
     return { ...m, recipeImages: images, updatedAt: ts };
   });
@@ -648,36 +768,18 @@ export async function applyMenuIngredientsAndRecipeImages(
     .filter(Boolean)
     .map((text) => ({ id: nextId('ing-'), text, createdAt: ts, checked: false }));
 
-  const storage = getStorageService();
-  const newImages: RecipeImage[] = [];
-  for (const input of recipeInputs) {
-    const name = input.name.trim();
-    if (!name || input.blob.size === 0) continue;
-    const imageTs = now();
-    const imageId = nextId('rimg-');
-    let storagePath: string | undefined;
-    let downloadUrl: string | undefined;
-    if (storage) {
-      try {
-        const fileName = sanitizeFileName(name);
-        storagePath = `recipe-images/${menuId}/${imageTs}-${imageId}-${fileName}`;
-        const storageRef = ref(storage, storagePath);
-        await uploadBytes(storageRef, input.blob, { contentType: 'image/jpeg' });
-        downloadUrl = await getDownloadURL(storageRef);
-      } catch {
-        storagePath = undefined;
-        downloadUrl = undefined;
-      }
-    }
-    if (!downloadUrl) {
+  const newImages: RecipeImage[] = await Promise.all(
+    recipeInputs.map(async (input) => {
+      const name = input.name.trim();
+      if (!name || input.blob.size === 0) return null;
+      const imageTs = now();
+      const imageId = nextId('rimg-');
       await putRecipeImageBlob(menuId, imageId, input.blob);
-    }
-    newImages.push(
-      downloadUrl
-        ? { id: imageId, name, storagePath, downloadUrl, createdAt: imageTs }
-        : { id: imageId, name, localOnly: true, createdAt: imageTs }
-    );
-  }
+      scheduleRecipeImageCloudUpload(menuId, imageId, name, input.blob, imageTs);
+      const img: RecipeImage = { id: imageId, name, localOnly: true, createdAt: imageTs };
+      return img;
+    })
+  ).then((arr) => arr.filter((x): x is RecipeImage => x !== null));
 
   const nextMenus = data.menus.map((m) => {
     if (m.id !== menuId) return m;
