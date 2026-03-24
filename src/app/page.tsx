@@ -633,14 +633,13 @@ export default function HomePage() {
                   <div className="min-w-0 sm:col-span-2">
                     <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">レシピ画像</label>
                     <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                      保存するとこの献立に登録されます（カメラ・アルバムから選択可）
+                      保存するとこの献立に登録されます（写真・スクリーンショットはフォトから、撮影はカメラから選べます）
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <input
                         id="draft-recipe-image-input"
                         type="file"
                         accept="image/*"
-                        capture="environment"
                         onChange={(e) => {
                           void onDraftRecipeImageSelected(e);
                         }}
@@ -1053,7 +1052,6 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
           id={inputId}
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={handleSelect}
           className="sr-only"
         />
