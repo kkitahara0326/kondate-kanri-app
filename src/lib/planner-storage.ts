@@ -590,6 +590,10 @@ function sanitizeFileName(name: string): string {
   return name.replace(/[^\w.\-]+/g, '_').slice(0, 120) || 'image.jpg';
 }
 
+async function yieldToPaint(): Promise<void> {
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+}
+
 export async function addRecipeImage(menuId: string, input: { name: string; blob: Blob }): Promise<void> {
   const name = input.name.trim();
   if (!name || input.blob.size === 0) return;
@@ -625,6 +629,7 @@ export async function addRecipeImage(menuId: string, input: { name: string; blob
     const images = [...(m.recipeImages ?? []), next];
     return { ...m, recipeImages: images, updatedAt: ts };
   });
+  await yieldToPaint();
   savePlannerData({ ...data, menus: nextMenus });
 }
 
@@ -683,6 +688,7 @@ export async function applyMenuIngredientsAndRecipeImages(
       updatedAt: ts,
     };
   });
+  await yieldToPaint();
   savePlannerData({ ...data, menus: nextMenus });
 }
 

@@ -28,7 +28,7 @@ import {
 } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import type { DayOfWeek, GlobalChecklistItem, MenuItem, RecipeImage } from '@/lib/types';
-import { compressImageFileToJpegBlob } from '@/lib/image-compress';
+import { prepareRecipeImageBlob } from '@/lib/image-compress';
 import { getRecipeImageBlob } from '@/lib/recipe-image-blobs';
 import { DAYS } from '@/lib/types';
 import { usePlannerSync } from '@/components/planner-sync-provider';
@@ -339,7 +339,7 @@ export default function HomePage() {
     if (!file) return;
     setDraftImageBusy(true);
     try {
-      const blob = await compressImageFileToJpegBlob(file);
+      const blob = await prepareRecipeImageBlob(file);
       const id =
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
@@ -1045,7 +1045,7 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
     if (!file) return;
     setBusy(true);
     try {
-      const blob = await compressImageFileToJpegBlob(file);
+      const blob = await prepareRecipeImageBlob(file);
       await addRecipeImage(menu.id, { name: file.name || 'recipe-image.jpg', blob });
     } finally {
       setBusy(false);
@@ -1056,7 +1056,8 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
     <div className="mt-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
       <ChecklistSectionHeader title="レシピ画像" accent="emerald" />
       <p className="mt-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-        無料利用時は画像は端末内のみ・同期はメタデータのみです。Firebase Storage が使える環境ではクラウドに保存されます。
+        無料利用時は画像は端末内のみ・同期はメタデータのみです。約220KB以下の画像は圧縮を省略して速く保存します。Firebase
+        Storage が使える環境ではクラウドに保存されます。
       </p>
       <div className="mt-3 flex items-center gap-2">
         <input
