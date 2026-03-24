@@ -1,12 +1,14 @@
-/** 献立レシピ画像用: 長辺を縮小して JPEG Blob にする（Firestore 非搭載時は IndexedDB 保存用） */
-export async function compressImageFileToJpegBlob(
+import { canUseRecipeImageCompressWorker, compressArrayBufferWithWorker } from '@/lib/recipe-image-compress-worker-client';
+
+/** メインスレッドで圧縮（Worker 非対応時のフォールバック） */
+export async function compressImageFileToJpegBlobMain(
   file: File,
   opts?: { maxEdge?: number; quality?: number }
 ): Promise<Blob> {
   await new Promise<void>((r) => requestAnimationFrame(() => r()));
   await new Promise<void>((r) => requestAnimationFrame(() => r()));
-  const maxEdge = opts?.maxEdge ?? 640;
-  const quality = opts?.quality ?? 0.65;
+  const maxEdge = opts?.maxEdge ?? 560;
+  const quality = opts?.quality ?? 0.6;
   const objectUrl = URL.createObjectURL(file);
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -45,4 +47,30 @@ export async function compressImageFileToJpegBlob(
     };
     img.src = objectUrl;
   });
+}
+
+/**
+ * 優先: Web Worker + OffscreenCanvas（UIスレッドをほぼブロックしない）
+ * フォールバック: メインスレッド canvas
+ */
+export async function compressImageFileToJpegBlob(
+  file: File,
+  opts?: { maxEdge?: number; quality?: number }
+): Promise<Blob> {
+  const maxEdge = opts?.maxEdge ?? 560;
+  const quality = opts?.quality ?? 0.6;
+  if (canUseRecipeImageCompressWorker()) {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      return await compressArrayBufferWithWorker(
+        arrayBuffer,
+        file.type || 'application/octet-stream',
+        maxEdge,
+        quality
+      );
+    } catch {
+      /* Worker 失敗時はメインへ */
+    }
+  }
+  return compressImageFileToJpegBlobMain(file, { maxEdge, quality });
 }

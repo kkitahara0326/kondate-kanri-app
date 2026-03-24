@@ -2,6 +2,7 @@
 
 import {
   Fragment,
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -1388,55 +1389,60 @@ function MenuInsertGap({
   );
 }
 
-function PlannerMenuRow({
-  menu: m,
-  activeDragMenuId,
-  isCollapsed,
-  onEdit,
-  onToggleCollapsed,
-}: {
-  menu: MenuItem;
-  activeDragMenuId: string | null;
-  isCollapsed: boolean;
-  onEdit: () => void;
-  onToggleCollapsed: () => void;
-}) {
-  return (
-    <div className="space-y-2">
-      {activeDragMenuId && activeDragMenuId !== m.id ? (
-        <CollapsedMenuBar title={m.title} collapsed />
-      ) : (
-        <DraggableMenuCard menu={m} title={m.title}>
-          {isCollapsed ? (
-            <CollapsedMenuBar
-              title={m.title}
-              collapsed
-              embedded
-              day={m.day}
-              onDayChange={(nextDay) => setMenuDay(m.id, nextDay)}
-              onToggle={onToggleCollapsed}
-              deleteMarked={m.deleteMarked}
-              onToggleDeleteMark={() => toggleMenuDeleteMarked(m.id)}
-              deleteMarkInputId={`menu-del-${m.id}`}
-            />
-          ) : (
-            <MenuCardBody menu={m} onEdit={onEdit} onToggleCollapsed={onToggleCollapsed} />
-          )}
-        </DraggableMenuCard>
-      )}
-    </div>
-  );
-}
+const PlannerMenuRow = memo(
+  function PlannerMenuRow({
+    menu: m,
+    activeDragMenuId,
+    isCollapsed,
+    onEdit,
+    onToggleCollapsed,
+  }: {
+    menu: MenuItem;
+    activeDragMenuId: string | null;
+    isCollapsed: boolean;
+    onEdit: () => void;
+    onToggleCollapsed: () => void;
+  }) {
+    return (
+      <div className="space-y-2">
+        {activeDragMenuId && activeDragMenuId !== m.id ? (
+          <CollapsedMenuBar title={m.title} collapsed />
+        ) : (
+          <DraggableMenuCard menu={m} title={m.title}>
+            {isCollapsed ? (
+              <CollapsedMenuBar
+                title={m.title}
+                collapsed
+                embedded
+                day={m.day}
+                onDayChange={(nextDay) => setMenuDay(m.id, nextDay)}
+                onToggle={onToggleCollapsed}
+                deleteMarked={m.deleteMarked}
+                onToggleDeleteMark={() => toggleMenuDeleteMarked(m.id)}
+                deleteMarkInputId={`menu-del-${m.id}`}
+              />
+            ) : (
+              <MenuCardBody menu={m} onEdit={onEdit} onToggleCollapsed={onToggleCollapsed} />
+            )}
+          </DraggableMenuCard>
+        )}
+      </div>
+    );
+  },
+  (p, n) =>
+    p.menu === n.menu && p.activeDragMenuId === n.activeDragMenuId && p.isCollapsed === n.isCollapsed
+);
 
-function MenuCardBody({
-  menu,
-  onEdit,
-  onToggleCollapsed,
-}: {
-  menu: MenuItem;
-  onEdit: () => void;
-  onToggleCollapsed: () => void;
-}) {
+const MenuCardBody = memo(
+  function MenuCardBody({
+    menu,
+    onEdit,
+    onToggleCollapsed,
+  }: {
+    menu: MenuItem;
+    onEdit: () => void;
+    onToggleCollapsed: () => void;
+  }) {
   const ingredientCount = menu.ingredients.length;
   const recipeCount = menu.recipeUrls.length;
 
@@ -1503,4 +1509,6 @@ function MenuCardBody({
       <MenuNotesField menu={menu} />
     </div>
   );
-}
+  },
+  (p, n) => p.menu === n.menu
+);
