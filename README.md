@@ -64,3 +64,32 @@ NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
    ブランチ名が `main` でない場合は、ワークフローの `branches` を書き換えてください。
 
 手元からだけデプロイする場合は `npm run deploy`（Firebase CLI ログイン済みが前提）でも同じです。
+
+## 予算アラート連動の自動停止（blockImageUpload の自動化）
+
+予算アラートを Pub/Sub に流し、Cloud Function で `app-config/limits.blockImageUpload=true` を自動更新できます。
+
+### 1) Budget alert の Pub/Sub 通知を有効化
+
+Google Cloud Billing の予算設定で、通知先に Pub/Sub トピック（例: `billing-budget-alerts`）を追加します。
+
+### 2) 関数をデプロイ
+
+```bash
+npm run deploy:budget-guard
+```
+
+必要に応じて `scripts/deploy-budget-guard.ps1` の引数で変更できます。
+
+```powershell
+.\scripts\deploy-budget-guard.ps1 -ProjectId shushi-kanri-app -Region asia-northeast1 -Topic billing-budget-alerts -Threshold 0.8
+```
+
+### 3) 動作
+
+- 予算通知の閾値が `BUDGET_GUARD_THRESHOLD`（既定 0.8）以上になると、Firestore `app-config/limits` に以下を merge します。
+  - `blockImageUpload: true`
+  - `imageUploadMessage: 今月上限に近いため画像追加を停止中です（予算アラート連動）`
+  - `updatedBy: budget-guard-function`
+
+> 注意: 自動で `false` には戻しません。月初など任意タイミングで手動解除してください。

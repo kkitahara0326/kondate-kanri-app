@@ -11,6 +11,7 @@ import type {
   RecipeImage,
 } from '@/lib/types';
 import { getFirestoreDb, getStorageService } from '@/lib/firebase';
+import { checkImageUploadGuard } from '@/lib/image-upload-policy';
 import {
   deleteRecipeImageBlob,
   deleteRecipeImageBlobsForMenu,
@@ -591,15 +592,22 @@ export async function addMenuWithDetails(input: {
     .map((text) => ({ id: nextId('ing-'), text, createdAt: ts, checked: false }));
 
   const blobs = input.recipeImageBlobs ?? [];
+  const existingImageCount = data.menus.reduce((sum, m) => sum + (m.recipeImages?.length ?? 0), 0);
 
+  const pendingUploads: { imageId: string; name: string; blob: Blob; imageTs: number }[] = [];
   const imageResults = await Promise.all(
-    blobs.map(async (row) => {
+    blobs.map(async (row, idx) => {
       const name = row.name.trim();
       if (!name || row.blob.size === 0) return null;
+      const guard = await checkImageUploadGuard({
+        existingImageCount: existingImageCount + idx,
+        nextFileBytes: row.blob.size,
+      });
+      if (!guard.allowed) return null;
       const imageTs = now();
       const imageId = nextId('rimg-');
       await putRecipeImageBlob(menuId, imageId, row.blob);
-      scheduleRecipeImageCloudUpload(menuId, imageId, name, row.blob, imageTs);
+      pendingUploads.push({ imageId, name, blob: row.blob, imageTs });
       const img: RecipeImage = { id: imageId, name, localOnly: true, createdAt: imageTs };
       return img;
     })
@@ -624,6 +632,9 @@ export async function addMenuWithDetails(input: {
   const nextMenus = [...data.menus, menu];
   await yieldToPaint();
   savePlannerData({ ...data, menus: nextMenus });
+  for (const row of pendingUploads) {
+    scheduleRecipeImageCloudUpload(menuId, row.imageId, row.name, row.blob, row.imageTs);
+  }
   return menu;
 }
 
@@ -715,6 +726,10 @@ function scheduleRecipeImageCloudUpload(
   if (!storage) return;
   void (async () => {
     try {
+      const before = getPlannerData();
+      const beforeMenu = before.menus.find((m) => m.id === menuId);
+      const beforeImageExists = Boolean(beforeMenu?.recipeImages?.some((img) => img.id === imageId));
+      if (!beforeImageExists) return;
       const fileName = sanitizeFileName(name);
       const storagePath = `recipe-images/${menuId}/${imageTs}-${imageId}-${fileName}`;
       const storageRef = ref(storage, storagePath);
@@ -722,6 +737,13 @@ function scheduleRecipeImageCloudUpload(
         uploadBytes(storageRef, blob, { contentType: 'image/jpeg' }).then(() => getDownloadURL(storageRef)),
         RECIPE_IMAGE_STORAGE_TIMEOUT_MS
       );
+      const after = getPlannerData();
+      const afterMenu = after.menus.find((m) => m.id === menuId);
+      const afterImageExists = Boolean(afterMenu?.recipeImages?.some((img) => img.id === imageId));
+      if (!afterImageExists) {
+        await deleteObject(storageRef).catch(() => {});
+        return;
+      }
       patchMenuRecipeImageWithRemoteUrl(menuId, imageId, { storagePath, downloadUrl });
     } catch {
       // IndexedDB の Blob で表示継続
@@ -736,11 +758,13 @@ async function yieldToPaint(): Promise<void> {
 export async function addRecipeImage(menuId: string, input: { name: string; blob: Blob }): Promise<void> {
   const name = input.name.trim();
   if (!name || input.blob.size === 0) return;
+  const existingImageCount = getPlannerData().menus.reduce((sum, m) => sum + (m.recipeImages?.length ?? 0), 0);
+  const guard = await checkImageUploadGuard({ existingImageCount, nextFileBytes: input.blob.size });
+  if (!guard.allowed) return;
   const ts = now();
   const imageId = nextId('rimg-');
 
   await putRecipeImageBlob(menuId, imageId, input.blob);
-  scheduleRecipeImageCloudUpload(menuId, imageId, name, input.blob, ts);
 
   const data = getPlannerData();
   const nextMenus = data.menus.map((m) => {
@@ -751,6 +775,7 @@ export async function addRecipeImage(menuId: string, input: { name: string; blob
   });
   await yieldToPaint();
   savePlannerData({ ...data, menus: nextMenus });
+  scheduleRecipeImageCloudUpload(menuId, imageId, name, input.blob, ts);
 }
 
 /** 新規献立保存など: 食材一括＋レシピ画像をまとめて反映し savePlannerData は1回だけ */
@@ -762,20 +787,27 @@ export async function applyMenuIngredientsAndRecipeImages(
   const data = getPlannerData();
   const menu = data.menus.find((m) => m.id === menuId);
   if (!menu) return;
+  const existingImageCount = data.menus.reduce((sum, m) => sum + (m.recipeImages?.length ?? 0), 0);
   const ts = now();
   const ingredients: Ingredient[] = ingredientTexts
     .map((t) => t.trim())
     .filter(Boolean)
     .map((text) => ({ id: nextId('ing-'), text, createdAt: ts, checked: false }));
 
+  const pendingUploads: { imageId: string; name: string; blob: Blob; imageTs: number }[] = [];
   const newImages: RecipeImage[] = await Promise.all(
-    recipeInputs.map(async (input) => {
+    recipeInputs.map(async (input, idx) => {
       const name = input.name.trim();
       if (!name || input.blob.size === 0) return null;
+      const guard = await checkImageUploadGuard({
+        existingImageCount: existingImageCount + idx,
+        nextFileBytes: input.blob.size,
+      });
+      if (!guard.allowed) return null;
       const imageTs = now();
       const imageId = nextId('rimg-');
       await putRecipeImageBlob(menuId, imageId, input.blob);
-      scheduleRecipeImageCloudUpload(menuId, imageId, name, input.blob, imageTs);
+      pendingUploads.push({ imageId, name, blob: input.blob, imageTs });
       const img: RecipeImage = { id: imageId, name, localOnly: true, createdAt: imageTs };
       return img;
     })
@@ -792,6 +824,9 @@ export async function applyMenuIngredientsAndRecipeImages(
   });
   await yieldToPaint();
   savePlannerData({ ...data, menus: nextMenus });
+  for (const row of pendingUploads) {
+    scheduleRecipeImageCloudUpload(menuId, row.imageId, row.name, row.blob, row.imageTs);
+  }
 }
 
 export async function removeRecipeImage(menuId: string, imageId: string): Promise<void> {
@@ -821,12 +856,22 @@ export async function removeRecipeImage(menuId: string, imageId: string): Promis
 
 export function deleteMenu(menuId: string): void {
   const data = getPlannerData();
+  const target = data.menus.find((m) => m.id === menuId);
+  const storagePaths = (target?.recipeImages ?? [])
+    .map((img) => img.storagePath)
+    .filter((p): p is string => Boolean(p));
   savePlannerData({
     ...data,
     menus: data.menus.filter((m) => m.id !== menuId),
     basket: data.basket.filter((b) => b.menuId !== menuId),
   });
   void deleteRecipeImageBlobsForMenu(menuId);
+  const storage = getStorageService();
+  if (storage) {
+    for (const path of storagePaths) {
+      void deleteObject(ref(storage, path)).catch(() => {});
+    }
+  }
 }
 
 export function toggleMenuDeleteMarked(menuId: string): void {
@@ -843,6 +888,10 @@ export function removeDeleteMarkedMenus(): void {
   const data = getPlannerData();
   const removeIds = new Set(data.menus.filter((m) => m.deleteMarked).map((m) => m.id));
   if (removeIds.size === 0) return;
+  const storagePaths = data.menus
+    .filter((m) => removeIds.has(m.id))
+    .flatMap((m) => (m.recipeImages ?? []).map((img) => img.storagePath))
+    .filter((p): p is string => Boolean(p));
   savePlannerData({
     ...data,
     menus: data.menus.filter((m) => !m.deleteMarked),
@@ -850,6 +899,12 @@ export function removeDeleteMarkedMenus(): void {
   });
   for (const id of removeIds) {
     void deleteRecipeImageBlobsForMenu(id);
+  }
+  const storage = getStorageService();
+  if (storage) {
+    for (const path of storagePaths) {
+      void deleteObject(ref(storage, path)).catch(() => {});
+    }
   }
 }
 

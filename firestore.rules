@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 課金ガード設定（クライアントから読み取り専用）
+    match /app-config/limits {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // 献立データ（認証未導入の暫定運用）
+    match /shushi-app/kondate-planner {
+      allow read, write: if true;
+    }
+
+    // 旧保存先（後方互換）
+    match /kondate-app/planner {
+      allow read, write: if true;
+    }
+
+    // それ以外は拒否
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

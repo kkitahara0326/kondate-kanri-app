@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "deploy": "npm run build && firebase deploy --only hosting",
-    "deploy:all": "npm run build && firebase deploy --only \"hosting,storage\""
+    "deploy:all": "npm run build && firebase deploy --only \"hosting,storage\"",
+    "deploy:budget-guard": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-budget-guard.ps1"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

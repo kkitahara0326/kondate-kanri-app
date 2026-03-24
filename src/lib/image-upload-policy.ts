@@ -21,7 +21,7 @@ type GuardResult = {
 const DEFAULT_MESSAGE = '現在は画像アップロードを停止しています。';
 const CONFIG_COLLECTION = 'app-config';
 const CONFIG_DOC = 'limits';
-const CACHE_MS = 60_000;
+const CACHE_MS = 5_000;
 
 let cache: { at: number; policy: ImageUploadPolicy } | null = null;
 
@@ -81,8 +81,14 @@ export async function getImageUploadPolicy(): Promise<ImageUploadPolicy> {
     cache = { at: now, policy };
     return policy;
   } catch {
-    cache = { at: now, policy: base };
-    return base;
+    // フェイルセーフ: 予算保護のため、設定取得に失敗した場合はアップロード禁止へ倒す
+    const safePolicy: ImageUploadPolicy = {
+      ...base,
+      blocked: true,
+      message: '設定取得に失敗したため、画像アップロードを一時停止しています。',
+    };
+    cache = { at: now, policy: safePolicy };
+    return safePolicy;
   }
 }
 

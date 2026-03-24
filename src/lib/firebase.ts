@@ -12,7 +12,7 @@ function readConfig() {
   const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN;
   const storageBucket =
     process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
-    (projectId ? `${projectId}.appspot.com` : undefined);
+    (projectId ? `${projectId}.firebasestorage.app` : undefined);
 
   if (!projectId || !apiKey || !authDomain || !storageBucket) return null;
   return { projectId, apiKey, authDomain, storageBucket };

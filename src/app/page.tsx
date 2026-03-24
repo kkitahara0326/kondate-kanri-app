@@ -309,20 +309,42 @@ export default function HomePage() {
 
     setSaveMenuSubmitting(true);
     try {
+      let uploadableDraftImages = draftPendingImages;
+      if (draftPendingImages.length > 0) {
+        const existingImageCount = data.menus.reduce((sum, m) => sum + (m.recipeImages?.length ?? 0), 0);
+        const maxBytes = Math.max(...draftPendingImages.map((p) => p.blob.size));
+        const guard = await checkImageUploadGuard({
+          existingImageCount,
+          nextFileBytes: maxBytes,
+        });
+        if (!guard.allowed) {
+          setDraftImageError(
+            guard.reason ?? 'クラウドストレージの上限に近いため、一時的に画像アップロードを制限しています。'
+          );
+          for (const img of draftPendingImages) {
+            URL.revokeObjectURL(img.previewUrl);
+          }
+          setDraftPendingImages([]);
+          return;
+        }
+      }
+
       const menu = await addMenuWithDetails({
         title: draft.title,
         day: draft.day,
         notes: draft.notes,
         recipeUrls,
         ingredientTexts: ingredients,
-        recipeImageBlobs: draftPendingImages.map((p) => ({ name: p.name, blob: p.blob })),
+        recipeImageBlobs: uploadableDraftImages.map((p) => ({ name: p.name, blob: p.blob })),
       });
       if (menu) {
-        for (const img of draftPendingImages) {
+        for (const img of uploadableDraftImages) {
           URL.revokeObjectURL(img.previewUrl);
         }
       }
-      setDraftPendingImages([]);
+      if (uploadableDraftImages.length > 0) {
+        setDraftPendingImages([]);
+      }
       setEditorOpen(false);
       setDraftRecipeUrlInput('');
       setDraftIngredientInput('');
