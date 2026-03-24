@@ -1,13 +1,16 @@
 /** 献立レシピ画像用: 長辺を縮小して JPEG Blob にする（Firestore 非搭載時は IndexedDB 保存用） */
-export function compressImageFileToJpegBlob(
+export async function compressImageFileToJpegBlob(
   file: File,
   opts?: { maxEdge?: number; quality?: number }
 ): Promise<Blob> {
-  const maxEdge = opts?.maxEdge ?? 960;
-  const quality = opts?.quality ?? 0.72;
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  const maxEdge = opts?.maxEdge ?? 640;
+  const quality = opts?.quality ?? 0.65;
   const objectUrl = URL.createObjectURL(file);
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.decoding = 'async';
     img.onload = () => {
       try {
         const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));

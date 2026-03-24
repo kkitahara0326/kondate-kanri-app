@@ -48,6 +48,7 @@ import {
   addOtherShoppingItem,
   addRecipeImage,
   addTodoItem,
+  applyMenuIngredientsAndRecipeImages,
   appendRecipeUrl,
   getPlannerData,
   moveMenu,
@@ -311,9 +312,14 @@ export default function HomePage() {
         recipeUrls,
       });
       if (menu) {
-        if (ingredients.length > 0) setMenuIngredients(menu.id, ingredients);
+        if (ingredients.length > 0 || draftPendingImages.length > 0) {
+          await applyMenuIngredientsAndRecipeImages(
+            menu.id,
+            ingredients,
+            draftPendingImages.map((p) => ({ name: p.name, blob: p.blob }))
+          );
+        }
         for (const img of draftPendingImages) {
-          await addRecipeImage(menu.id, { name: img.name, blob: img.blob });
           URL.revokeObjectURL(img.previewUrl);
         }
       }

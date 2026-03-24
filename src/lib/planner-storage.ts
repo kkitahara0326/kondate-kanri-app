@@ -113,6 +113,9 @@ async function migrateLegacyEmbeddedRecipeImages(data: PlannerDataV4): Promise<{
   next: PlannerDataV4;
   changed: boolean;
 }> {
+  if (!plannerHasRecipeImageDataUrls(data)) {
+    return { next: data, changed: false };
+  }
   let changed = false;
   const menus = await Promise.all(
     data.menus.map(async (m) => {
@@ -203,6 +206,44 @@ function uploadToFirestore(data: PlannerDataV4): void {
   void setDoc(ref, { data } satisfies PlannerDoc, { merge: true }).catch(() => {
     // ignore (offline / no config)
   });
+}
+
+const FIRESTORE_DEBOUNCE_MS = 1200;
+let firestoreDebounceTimer: number | null = null;
+let pendingFirestorePayload: PlannerDataV4 | null = null;
+
+function scheduleFirestoreUpload(data: PlannerDataV4): void {
+  pendingFirestorePayload = data;
+  const db = getFirestoreDb();
+  if (!db) return;
+  if (firestoreDebounceTimer !== null) clearTimeout(firestoreDebounceTimer);
+  firestoreDebounceTimer = window.setTimeout(() => {
+    firestoreDebounceTimer = null;
+    const payload = pendingFirestorePayload;
+    pendingFirestorePayload = null;
+    if (payload) uploadToFirestore(payload);
+  }, FIRESTORE_DEBOUNCE_MS);
+}
+
+/** タブを閉じる前・非表示時に未送信の Firestore 同期を即 flush */
+export function flushPlannerFirestoreSync(): void {
+  if (typeof window === 'undefined') return;
+  if (firestoreDebounceTimer !== null) {
+    clearTimeout(firestoreDebounceTimer);
+    firestoreDebounceTimer = null;
+  }
+  const payload = pendingFirestorePayload;
+  pendingFirestorePayload = null;
+  if (payload) uploadToFirestore(payload);
+}
+
+function plannerHasRecipeImageDataUrls(d: PlannerDataV4): boolean {
+  for (const m of d.menus) {
+    for (const img of m.recipeImages ?? []) {
+      if (img.dataUrl) return true;
+    }
+  }
+  return false;
 }
 
 function safeParse<T>(raw: string | null): T | null {
@@ -380,7 +421,7 @@ export function savePlannerData(data: PlannerDataV4): void {
   const persisted = sanitizePlannerForPersistence(normalized);
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
   window.dispatchEvent(new CustomEvent(UPDATED_EVENT, { detail: persisted }));
-  uploadToFirestore(persisted);
+  scheduleFirestoreUpload(persisted);
 }
 
 export async function initialSyncPlannerFromFirestore(): Promise<void> {
@@ -453,6 +494,12 @@ export function subscribePlanner(onChange: (data: PlannerDataV4) => void): () =>
       if (!cloud) return;
       const local = getPlannerData();
       if ((cloud.updatedAt ?? 0) < (local.updatedAt ?? 0)) return;
+      if (!plannerHasRecipeImageDataUrls(cloud)) {
+        const persisted = sanitizePlannerForPersistence(cloud);
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+        onChange(cloud);
+        return;
+      }
       void (async () => {
         const { next, changed } = await migrateLegacyEmbeddedRecipeImages(cloud);
         const localAfter = getPlannerData();
@@ -577,6 +624,64 @@ export async function addRecipeImage(menuId: string, input: { name: string; blob
       : { id: imageId, name, localOnly: true, createdAt: ts };
     const images = [...(m.recipeImages ?? []), next];
     return { ...m, recipeImages: images, updatedAt: ts };
+  });
+  savePlannerData({ ...data, menus: nextMenus });
+}
+
+/** 新規献立保存など: 食材一括＋レシピ画像をまとめて反映し savePlannerData は1回だけ */
+export async function applyMenuIngredientsAndRecipeImages(
+  menuId: string,
+  ingredientTexts: string[],
+  recipeInputs: { name: string; blob: Blob }[]
+): Promise<void> {
+  const data = getPlannerData();
+  const menu = data.menus.find((m) => m.id === menuId);
+  if (!menu) return;
+  const ts = now();
+  const ingredients: Ingredient[] = ingredientTexts
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((text) => ({ id: nextId('ing-'), text, createdAt: ts, checked: false }));
+
+  const storage = getStorageService();
+  const newImages: RecipeImage[] = [];
+  for (const input of recipeInputs) {
+    const name = input.name.trim();
+    if (!name || input.blob.size === 0) continue;
+    const imageTs = now();
+    const imageId = nextId('rimg-');
+    let storagePath: string | undefined;
+    let downloadUrl: string | undefined;
+    if (storage) {
+      try {
+        const fileName = sanitizeFileName(name);
+        storagePath = `recipe-images/${menuId}/${imageTs}-${imageId}-${fileName}`;
+        const storageRef = ref(storage, storagePath);
+        await uploadBytes(storageRef, input.blob, { contentType: 'image/jpeg' });
+        downloadUrl = await getDownloadURL(storageRef);
+      } catch {
+        storagePath = undefined;
+        downloadUrl = undefined;
+      }
+    }
+    if (!downloadUrl) {
+      await putRecipeImageBlob(menuId, imageId, input.blob);
+    }
+    newImages.push(
+      downloadUrl
+        ? { id: imageId, name, storagePath, downloadUrl, createdAt: imageTs }
+        : { id: imageId, name, localOnly: true, createdAt: imageTs }
+    );
+  }
+
+  const nextMenus = data.menus.map((m) => {
+    if (m.id !== menuId) return m;
+    return {
+      ...m,
+      ingredients,
+      recipeImages: [...(m.recipeImages ?? []), ...newImages],
+      updatedAt: ts,
+    };
   });
   savePlannerData({ ...data, menus: nextMenus });
 }

@@ -1,8 +1,9 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, startTransition } from 'react';
 import type { PlannerDataV4 } from '@/lib/types';
 import {
+  flushPlannerFirestoreSync,
   getPlannerData,
   initialSyncPlannerFromFirestore,
   runRecipeImageMigrationOnce,
@@ -42,7 +43,7 @@ export function PlannerSyncProvider({ children }: { children: React.ReactNode })
   const [hasCloud, setHasCloud] = useState(false);
 
   useEffect(() => {
-    const unsubLocal = subscribePlannerLocal((next) => setData(next));
+    const unsubLocal = subscribePlannerLocal((next) => startTransition(() => setData(next)));
     let unsubCloud: (() => void) | null = null;
 
     initialSyncPlannerFromFirestore()
@@ -50,16 +51,29 @@ export function PlannerSyncProvider({ children }: { children: React.ReactNode })
       .then(() => runRecipeImageMigrationOnce())
       .finally(() => {
         setSynced(true);
-        setData(getPlannerData());
+        startTransition(() => setData(getPlannerData()));
         unsubCloud = subscribePlanner((next) => {
           setHasCloud(true);
-          setData(next);
+          startTransition(() => setData(next));
         });
       });
 
     return () => {
       unsubLocal();
       if (unsubCloud) unsubCloud();
+    };
+  }, []);
+
+  useEffect(() => {
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden') flushPlannerFirestoreSync();
+    };
+    const onUnload = () => flushPlannerFirestoreSync();
+    document.addEventListener('visibilitychange', onHidden);
+    window.addEventListener('pagehide', onUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', onHidden);
+      window.removeEventListener('pagehide', onUnload);
     };
   }, []);
 
