@@ -29,6 +29,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import type { DayOfWeek, GlobalChecklistItem, MenuItem, RecipeImage } from '@/lib/types';
 import { prepareRecipeImageBlob } from '@/lib/image-compress';
+import { checkImageUploadGuard } from '@/lib/image-upload-policy';
 import { getRecipeImageBlob } from '@/lib/recipe-image-blobs';
 import { DAYS } from '@/lib/types';
 import { usePlannerSync } from '@/components/planner-sync-provider';
@@ -215,6 +216,7 @@ export default function HomePage() {
   const [draftIngredientInput, setDraftIngredientInput] = useState('');
   const [draftPendingImages, setDraftPendingImages] = useState<DraftPendingImage[]>([]);
   const [draftImageBusy, setDraftImageBusy] = useState(false);
+  const [draftImageError, setDraftImageError] = useState<string | null>(null);
   const [saveMenuSubmitting, setSaveMenuSubmitting] = useState(false);
 
   const menusByDay = useMemo(() => {
@@ -258,6 +260,7 @@ export default function HomePage() {
   const openCreate = (day: DayOfWeek) => {
     setEditingMenuId(null);
     setDraft(emptyDraft(day));
+    setDraftImageError(null);
     setDraftPendingImages((prev) => {
       for (const p of prev) URL.revokeObjectURL(p.previewUrl);
       return [];
@@ -266,6 +269,7 @@ export default function HomePage() {
   };
 
   const openEdit = (menu: MenuItem) => {
+    setDraftImageError(null);
     setDraftPendingImages((prev) => {
       for (const p of prev) URL.revokeObjectURL(p.previewUrl);
       return [];
@@ -331,6 +335,14 @@ export default function HomePage() {
     const file = e.target.files?.[0];
     e.currentTarget.value = '';
     if (!file) return;
+    const existingImageCount =
+      data.menus.reduce((sum, m) => sum + (m.recipeImages?.length ?? 0), 0) + draftPendingImages.length;
+    const guard = await checkImageUploadGuard({ existingImageCount, nextFileBytes: file.size });
+    if (!guard.allowed) {
+      setDraftImageError(guard.reason ?? '現在は画像アップロードできません。');
+      return;
+    }
+    setDraftImageError(null);
     setDraftImageBusy(true);
     try {
       const blob = await prepareRecipeImageBlob(file);
@@ -675,6 +687,9 @@ export default function HomePage() {
                         {draftImageBusy ? '処理中...' : '画像を追加'}
                       </label>
                     </div>
+                    {draftImageError ? (
+                      <p className="mt-2 text-xs font-medium text-rose-600 dark:text-rose-400">{draftImageError}</p>
+                    ) : null}
                     {draftPendingImages.length > 0 ? (
                       <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {draftPendingImages.map((img) => (
@@ -1030,6 +1045,7 @@ function RecipeUrlAdder({ menu }: { menu: MenuItem }) {
 
 function RecipeImageSection({ menu }: { menu: MenuItem }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const images = menu.recipeImages ?? [];
   const inputId = `recipe-image-input-${menu.id}`;
 
@@ -1037,6 +1053,13 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
     const file = e.target.files?.[0];
     e.currentTarget.value = '';
     if (!file) return;
+    const existingImageCount = getPlannerData().menus.reduce((sum, m) => sum + (m.recipeImages?.length ?? 0), 0);
+    const guard = await checkImageUploadGuard({ existingImageCount, nextFileBytes: file.size });
+    if (!guard.allowed) {
+      setError(guard.reason ?? '現在は画像アップロードできません。');
+      return;
+    }
+    setError(null);
     setBusy(true);
     try {
       const blob = await prepareRecipeImageBlob(file);
@@ -1068,6 +1091,7 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
           {busy ? '保存中...' : '画像を追加'}
         </label>
       </div>
+      {error ? <p className="mt-2 text-xs font-medium text-rose-600 dark:text-rose-400">{error}</p> : null}
       {images.length > 0 ? (
         <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {images.map((img) => (
