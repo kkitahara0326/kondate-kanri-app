@@ -1083,6 +1083,16 @@ export function appendRecipeUrl(menuId: string, url: string): void {
   updateMenu(menuId, { recipeUrls: [...menu.recipeUrls, trimmed] });
 }
 
+/** メニューからレシピURLを1件削除（一覧の並び順に対応するインデックス） */
+export function removeRecipeUrlAt(menuId: string, index: number): void {
+  const data = getPlannerData();
+  const menu = data.menus.find((m) => m.id === menuId);
+  if (!menu) return;
+  if (index < 0 || index >= menu.recipeUrls.length) return;
+  const next = menu.recipeUrls.filter((_, i) => i !== index);
+  updateMenu(menuId, { recipeUrls: next });
+}
+
 /** 食材のチェック（買った印）をトグル。食材は消えず一覧に残る */
 export function toggleIngredientChecked(menuId: string, ingredientId: string): void {
   const data = getPlannerData();

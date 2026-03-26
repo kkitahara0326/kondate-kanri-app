@@ -52,6 +52,7 @@ import {
   addTodoItem,
   appendRecipeUrl,
   getPlannerData,
+  removeRecipeUrlAt,
   moveMenu,
   moveMenuToFlatGapIndex,
   removeBasketItem,
@@ -1044,16 +1045,26 @@ function RecipeUrlAdder({ menu }: { menu: MenuItem }) {
       />
       {menu.recipeUrls.length > 0 ? (
         <ChecklistList ariaLabel="レシピURL一覧">
-          {menu.recipeUrls.map((u) => (
-            <ChecklistListItem key={u}>
-              <a
-                href={u}
-                target="_blank"
-                rel="noreferrer"
-                className="block break-all py-2.5 text-sm font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300"
-              >
-                {u}
-              </a>
+          {menu.recipeUrls.map((u, idx) => (
+            <ChecklistListItem key={`${u}-${idx}`}>
+              <div className="flex items-start gap-2 py-2.5">
+                <a
+                  href={u}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 flex-1 break-all text-sm font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300"
+                >
+                  {u}
+                </a>
+                <button
+                  type="button"
+                  onClick={() => removeRecipeUrlAt(menu.id, idx)}
+                  className="shrink-0 rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  aria-label={`レシピURLを削除: ${u}`}
+                >
+                  削除
+                </button>
+              </div>
             </ChecklistListItem>
           ))}
         </ChecklistList>
