@@ -19,6 +19,8 @@ type GuardResult = {
 };
 
 const DEFAULT_MESSAGE = '現在は画像アップロードを停止しています。';
+/** 環境変数・Firestore未設定時の1枚あたり上限（選択ファイルの元サイズ。iPhoneスクショ想定） */
+export const DEFAULT_MAX_RECIPE_IMAGE_BYTES = 3 * 1024 * 1024;
 const CONFIG_COLLECTION = 'app-config';
 const CONFIG_DOC = 'limits';
 const CACHE_MS = 5_000;
@@ -31,8 +33,21 @@ function toNumberOrNull(v: unknown): number | null {
   return Math.floor(v);
 }
 
+function formatMaxFileLabel(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    const mb = bytes / (1024 * 1024);
+    return Number.isInteger(mb) ? `${mb}MB` : `${mb.toFixed(1)}MB`;
+  }
+  return `${Math.ceil(bytes / 1024)}KB`;
+}
+
 function basePolicy(): ImageUploadPolicy {
   const blockedByEnv = process.env.NEXT_PUBLIC_BLOCK_IMAGE_UPLOAD === 'true';
+  const envMaxBytes = toNumberOrNull(
+    process.env.NEXT_PUBLIC_MAX_RECIPE_IMAGE_BYTES
+      ? Number(process.env.NEXT_PUBLIC_MAX_RECIPE_IMAGE_BYTES)
+      : null
+  );
   return {
     blocked: blockedByEnv,
     maxImageCount: toNumberOrNull(
@@ -40,11 +55,7 @@ function basePolicy(): ImageUploadPolicy {
         ? Number(process.env.NEXT_PUBLIC_MAX_RECIPE_IMAGE_COUNT)
         : null
     ),
-    maxFileBytes: toNumberOrNull(
-      process.env.NEXT_PUBLIC_MAX_RECIPE_IMAGE_BYTES
-        ? Number(process.env.NEXT_PUBLIC_MAX_RECIPE_IMAGE_BYTES)
-        : null
-    ),
+    maxFileBytes: envMaxBytes ?? DEFAULT_MAX_RECIPE_IMAGE_BYTES,
     message: blockedByEnv ? DEFAULT_MESSAGE : null,
   };
 }
@@ -103,7 +114,7 @@ export async function checkImageUploadGuard(input: GuardInput): Promise<GuardRes
   if (policy.maxFileBytes !== null && input.nextFileBytes > policy.maxFileBytes) {
     return {
       allowed: false,
-      reason: `画像サイズが上限(${Math.ceil(policy.maxFileBytes / 1024)}KB)を超えています。`,
+      reason: `画像サイズが上限(${formatMaxFileLabel(policy.maxFileBytes)})を超えています。`,
     };
   }
   return { allowed: true };
