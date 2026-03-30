@@ -1479,7 +1479,7 @@ function CollapsedMenuBar({
 function MenuInsertGap({
   insertIndex,
   active,
-  highlight,
+  highlight: _highlight,
 }: {
   insertIndex: number;
   /** 献立カードをドラッグ中のみヒット領域を広げる */
@@ -1487,14 +1487,15 @@ function MenuInsertGap({
   highlight: boolean;
 }) {
   const id = `insert-at:${insertIndex}`;
-  const { setNodeRef, isOver } = useDroppable({ id });
-  const hot = isOver || highlight;
+  void _highlight;
+  const { setNodeRef } = useDroppable({ id });
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-full transition-all ${
+      // 位置調整のための「ヒット領域」は維持しつつ、見た目のバーだけ非表示にする
+      className={`rounded-full transition-all opacity-0 ${
         active ? 'min-h-4 py-3' : 'min-h-0 py-0'
-      } ${hot ? 'bg-gradient-to-r from-emerald-400 to-teal-400 shadow-md shadow-emerald-600/25 ring-2 ring-white/50 dark:from-emerald-500 dark:to-teal-500' : active ? 'bg-zinc-200/60 dark:bg-zinc-700/50' : ''}`}
+      }`}
       aria-hidden
     />
   );
