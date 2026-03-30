@@ -57,7 +57,6 @@ import {
   moveMenuToFlatGapIndex,
   removeBasketItem,
   removeCheckedIngredients,
-  removeOtherShoppingItem,
   removeCheckedOtherShopping,
   removeCheckedTodos,
   removeDeleteMarkedMenus,
@@ -312,7 +311,7 @@ export default function HomePage() {
 
     setSaveMenuSubmitting(true);
     try {
-      let uploadableDraftImages = draftPendingImages;
+      const uploadableDraftImages = draftPendingImages;
       if (draftPendingImages.length > 0) {
         const existingImageCount = data.menus.reduce((sum, m) => sum + (m.recipeImages?.length ?? 0), 0);
         const maxBytes = Math.max(...draftPendingImages.map((p) => p.blob.size));
@@ -529,13 +528,17 @@ export default function HomePage() {
           const overGap = m ? Number(m[1]) : null;
 
           // Touch / Pointer のどちらでも、ドラッグ位置の Y 座標を拾う
+          type ClientYTouch = { clientY?: number };
           const activatorEvent = e.activatorEvent as unknown as { clientY?: unknown; touches?: unknown; changedTouches?: unknown };
+          const firstTouchClientY = (list: unknown): number | null => {
+            if (!Array.isArray(list) || list.length === 0) return null;
+            const y = (list[0] as ClientYTouch | undefined)?.clientY;
+            return typeof y === 'number' && Number.isFinite(y) ? y : null;
+          };
           const clientY =
-            typeof activatorEvent?.clientY === 'number'
-              ? (activatorEvent.clientY as number)
-              : (activatorEvent as any)?.touches?.[0]?.clientY ??
-                (activatorEvent as any)?.changedTouches?.[0]?.clientY ??
-                null;
+            typeof activatorEvent?.clientY === 'number' && Number.isFinite(activatorEvent.clientY)
+              ? activatorEvent.clientY
+              : firstTouchClientY(activatorEvent.touches) ?? firstTouchClientY(activatorEvent.changedTouches) ?? null;
 
           // カードの中心（上半分/下半分の境界）を越えたら入れ替える
           let nextGap: number | null = overGap;
@@ -729,8 +732,7 @@ export default function HomePage() {
                     </div>
                     {draftIngredients.length > 0 ? (
                       <>
-                        <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-100 pt-3">
-                          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">チェック済みを削除</p>
+                        <div className="mt-2 flex items-center justify-end gap-2 border-t border-zinc-100 pt-3">
                           <ChecklistBulkRemoveButton
                             count={draftIngredientChecked.filter(Boolean).length}
                             onClick={removeCheckedDraftIngredients}
@@ -1063,13 +1065,8 @@ function DraggableMenuCard({
 
 /** 献立カード内メモ（即時編集・blur で保存） */
 function MenuNotesField({ menu }: { menu: MenuItem }) {
-  const [value, setValue] = useState(menu.notes ?? '');
-  useEffect(() => {
-    setValue(menu.notes ?? '');
-  }, [menu.id, menu.notes]);
-
-  const save = () => {
-    const next = value.trim();
+  const save = (nextRaw: string) => {
+    const next = nextRaw.trim();
     const cur = (menu.notes ?? '').trim();
     if (next === cur) return;
     updateMenu(menu.id, { notes: next });
@@ -1079,9 +1076,9 @@ function MenuNotesField({ menu }: { menu: MenuItem }) {
     <div className="mt-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
       <ChecklistSectionHeader title="メモ" accent="emerald" />
       <textarea
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={save}
+        id={`notes-${menu.id}`}
+        defaultValue={menu.notes ?? ''}
+        onBlur={(e) => save(e.currentTarget.value)}
         rows={3}
         data-no-dnd
         className="mt-3 min-h-[4.5rem] w-full resize-y rounded-xl border-0 bg-zinc-100/80 px-3 py-2.5 text-sm leading-relaxed text-zinc-900 outline-none ring-1 ring-zinc-200/80 transition focus:bg-white focus:ring-2 focus:ring-emerald-400/50 dark:bg-zinc-800/80 dark:text-zinc-100 dark:ring-zinc-700 dark:focus:bg-zinc-950"
