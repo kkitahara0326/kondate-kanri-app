@@ -20,7 +20,7 @@ type GuardResult = {
 
 const DEFAULT_MESSAGE = '現在は画像アップロードを停止しています。';
 /** 環境変数・Firestore未設定時の1枚あたり上限（選択ファイルの元サイズ。iPhoneスクショ想定） */
-export const DEFAULT_MAX_RECIPE_IMAGE_BYTES = 500 * 1024;
+export const DEFAULT_MAX_RECIPE_IMAGE_BYTES = 5 * 1024 * 1024;
 const CONFIG_COLLECTION = 'app-config';
 const CONFIG_DOC = 'limits';
 const CACHE_MS = 5_000;
