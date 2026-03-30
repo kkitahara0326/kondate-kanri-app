@@ -1327,23 +1327,17 @@ function GlobalChecklistPanel({
         <ChecklistList ariaLabel={title}>
           {items.map((i) => (
             <ChecklistListItem key={i.id}>
-              <div className="flex items-center gap-2">
-                <div className="flex-1">
-                  <ChecklistRow
-                    id={`gcl-${variant}-${i.id}`}
-                    checked={Boolean(i.checked)}
-                    onChange={() => onToggle(i.id)}
-                    label={i.text}
-                    accent={accent}
-                    ariaLabelChecked={`${i.text}のチェックを外す`}
-                    ariaLabelUnchecked={
-                      variant === 'shopping'
-                        ? `${i.text}を買ったことにする`
-                        : `${i.text}を完了にする`
-                    }
-                  />
-                </div>
-              </div>
+              <ChecklistRow
+                id={`gcl-${variant}-${i.id}`}
+                checked={Boolean(i.checked)}
+                onChange={() => onToggle(i.id)}
+                label={i.text}
+                accent={accent}
+                ariaLabelChecked={`${i.text}のチェックを外す`}
+                ariaLabelUnchecked={
+                  variant === 'shopping' ? `${i.text}を買ったことにする` : `${i.text}を完了にする`
+                }
+              />
             </ChecklistListItem>
           ))}
         </ChecklistList>
