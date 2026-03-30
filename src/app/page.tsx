@@ -419,14 +419,6 @@ export default function HomePage() {
     setDraftIngredientInput('');
   };
 
-  const removeDraftIngredientAt = (idx: number) => {
-    setDraft((d) => {
-      const lines = parseLines(d.ingredientsText);
-      lines.splice(idx, 1);
-      return { ...d, ingredientsText: lines.join('\n') };
-    });
-  };
-
   const draftRecipeUrls = useMemo(() => parseUrls(draft.recipeUrlsText), [draft.recipeUrlsText]);
   const draftIngredients = useMemo(() => parseLines(draft.ingredientsText), [draft.ingredientsText]);
 
@@ -715,13 +707,6 @@ export default function HomePage() {
                         {draftIngredients.map((item, idx) => (
                           <li key={`${item}-${idx}`} className="flex items-start gap-2 px-3 py-2">
                             <span className="min-w-0 flex-1 break-words text-sm leading-snug">{item}</span>
-                            <button
-                              type="button"
-                              onClick={() => removeDraftIngredientAt(idx)}
-                              className="shrink-0 rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                            >
-                              削除
-                            </button>
                           </li>
                         ))}
                       </ul>
