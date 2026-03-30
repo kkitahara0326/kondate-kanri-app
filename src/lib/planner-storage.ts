@@ -10,6 +10,7 @@ import type {
   PlannerDataV4,
   RecipeImage,
 } from '@/lib/types';
+import { DAYS_SUN_START } from '@/lib/types';
 import { getFirestoreDb, getStorageService } from '@/lib/firebase';
 import { checkImageUploadGuard } from '@/lib/image-upload-policy';
 import {
@@ -954,7 +955,8 @@ export function moveMenu(menuId: string, nextDay: MenuItem['day'], nextOrder: nu
 /** 月→日・同一曜日内 order でフラット化（表示順と一致） */
 export function flattenMenusByDayOrder(menus: MenuItem[]): MenuItem[] {
   const out: MenuItem[] = [];
-  for (let d = 0; d <= 6; d++) {
+  for (const day of DAYS_SUN_START) {
+    const d = day.key;
     out.push(
       ...menus
         .filter((m) => m.day === d)
@@ -965,7 +967,7 @@ export function flattenMenusByDayOrder(menus: MenuItem[]): MenuItem[] {
 }
 
 /**
- * 一覧（月→日順）の gapIndex 番目の「線」の前に挿入。gapIndex === 並びの長さなら末尾へ。
+ * 一覧（日→土順）の gapIndex 番目の「線」の前に挿入。gapIndex === 並びの長さなら末尾へ。
  */
 export function moveMenuToFlatGapIndex(menuId: string, gapIndex: number): void {
   const data = getPlannerData();
@@ -1013,12 +1015,13 @@ export function setMenuDay(menuId: string, nextDay: MenuItem['day']): void {
 }
 
 /**
- * 月→日の曜日順に、各曜日内を order → 更新日時 → タイトルで整列し order を 0 から振り直す
+ * 日→土の曜日順に、各曜日内を order → 更新日時 → タイトルで整列し order を 0 から振り直す
  */
 export function sortMenusByDayOrder(): void {
   const data = getPlannerData();
   const nextMenus: MenuItem[] = [];
-  for (let d = 0; d <= 6; d++) {
+  for (const day of DAYS_SUN_START) {
+    const d = day.key;
     const list = data.menus
       .filter((m) => m.day === d)
       .sort(

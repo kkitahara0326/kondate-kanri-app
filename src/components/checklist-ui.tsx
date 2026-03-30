@@ -33,11 +33,13 @@ const ADD_BTN: Record<ChecklistAccent, string> = {
   rose: 'bg-rose-600 hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-400',
 };
 
-const PANEL_SHELL: Record<'amber' | 'violet', string> = {
+const PANEL_SHELL: Record<'amber' | 'violet' | 'emerald', string> = {
   amber:
     'border-amber-200/70 bg-gradient-to-br from-amber-50/60 to-white dark:border-amber-900/45 dark:from-amber-950/25 dark:to-zinc-900/40',
   violet:
     'border-violet-200/70 bg-gradient-to-br from-violet-50/50 to-white dark:border-violet-900/40 dark:from-violet-950/20 dark:to-zinc-900/40',
+  emerald:
+    'border-emerald-200/70 bg-gradient-to-br from-emerald-50/60 to-white dark:border-emerald-900/45 dark:from-emerald-950/25 dark:to-zinc-900/40',
 };
 
 /** チェックボックス風の正方形（sr-only の input と併用） */
@@ -273,7 +275,13 @@ export function ChecklistAddBar({
 }
 
 /** その他買い物 / やること 用のカード外枠 */
-export function ChecklistPanelShell({ variant, children }: { variant: 'amber' | 'violet'; children: ReactNode }) {
+export function ChecklistPanelShell({
+  variant,
+  children,
+}: {
+  variant: 'amber' | 'violet' | 'emerald';
+  children: ReactNode;
+}) {
   return <div className={`rounded-2xl border p-4 shadow-sm ${PANEL_SHELL[variant]}`}>{children}</div>;
 }
 

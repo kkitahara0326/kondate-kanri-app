@@ -100,3 +100,6 @@ export const DAYS: { key: DayOfWeek; label: string }[] = [
   { key: 6, label: '日' },
 ];
 
+/** UI表示用: 日→土（DayOfWeek の数値意味はそのまま） */
+export const DAYS_SUN_START: typeof DAYS = [...DAYS.slice(6), ...DAYS.slice(0, 6)];
+

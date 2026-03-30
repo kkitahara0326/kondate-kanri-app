@@ -20,7 +20,7 @@ type GuardResult = {
 
 const DEFAULT_MESSAGE = '現在は画像アップロードを停止しています。';
 /** 環境変数・Firestore未設定時の1枚あたり上限（選択ファイルの元サイズ。iPhoneスクショ想定） */
-export const DEFAULT_MAX_RECIPE_IMAGE_BYTES = 3 * 1024 * 1024;
+export const DEFAULT_MAX_RECIPE_IMAGE_BYTES = 500 * 1024;
 const CONFIG_COLLECTION = 'app-config';
 const CONFIG_DOC = 'limits';
 const CACHE_MS = 5_000;
@@ -65,7 +65,9 @@ function mergeRemote(base: ImageUploadPolicy, raw: unknown): ImageUploadPolicy {
   const obj = raw as Record<string, unknown>;
   const blocked = typeof obj.blockImageUpload === 'boolean' ? obj.blockImageUpload : base.blocked;
   const maxImageCount = toNumberOrNull(obj.maxRecipeImagesPerWeek) ?? base.maxImageCount;
-  const maxFileBytes = toNumberOrNull(obj.maxImageBytes) ?? base.maxFileBytes;
+  const remoteMaxFileBytes = toNumberOrNull(obj.maxImageBytes) ?? base.maxFileBytes;
+  // budget guard 側が maxImageBytes を小さく設定していても、操作できないほど厳しい上限は避ける
+  const maxFileBytes = remoteMaxFileBytes === null ? null : Math.max(remoteMaxFileBytes, DEFAULT_MAX_RECIPE_IMAGE_BYTES);
   const message =
     typeof obj.imageUploadMessage === 'string' && obj.imageUploadMessage.trim().length > 0
       ? obj.imageUploadMessage.trim()

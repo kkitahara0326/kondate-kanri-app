@@ -31,7 +31,7 @@ import type { DayOfWeek, GlobalChecklistItem, MenuItem, RecipeImage } from '@/li
 import { prepareRecipeImageBlob } from '@/lib/image-compress';
 import { checkImageUploadGuard } from '@/lib/image-upload-policy';
 import { getRecipeImageBlob } from '@/lib/recipe-image-blobs';
-import { DAYS } from '@/lib/types';
+import { DAYS, DAYS_SUN_START } from '@/lib/types';
 import { usePlannerSync } from '@/components/planner-sync-provider';
 import {
   ChecklistAddBar,
@@ -57,6 +57,7 @@ import {
   moveMenuToFlatGapIndex,
   removeBasketItem,
   removeCheckedIngredients,
+  removeOtherShoppingItem,
   removeCheckedOtherShopping,
   removeCheckedTodos,
   removeDeleteMarkedMenus,
@@ -151,7 +152,7 @@ function DayChipSelect({
 }) {
   return (
     <div className="flex flex-wrap gap-1" role="group" aria-label="曜日を選択">
-      {DAYS.map((d) => (
+      {DAYS_SUN_START.map((d) => (
         <button
           key={d.key}
           type="button"
@@ -212,7 +213,7 @@ export default function HomePage() {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingMenuId, setEditingMenuId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<MenuDraft>(() => emptyDraft(0));
+  const [draft, setDraft] = useState<MenuDraft>(() => emptyDraft(DAYS_SUN_START[0].key));
   const [draftRecipeUrlInput, setDraftRecipeUrlInput] = useState('');
   const [draftIngredientInput, setDraftIngredientInput] = useState('');
   const [draftPendingImages, setDraftPendingImages] = useState<DraftPendingImage[]>([]);
@@ -233,10 +234,10 @@ export default function HomePage() {
     return base;
   }, [data.menus]);
 
-  /** 月→日の順にフラット表示（枠なし一覧用） */
+  /** 日→土の順にフラット表示（枠なし一覧用） */
   const flatMenusForDisplay = useMemo(() => {
     const out: MenuItem[] = [];
-    for (const d of DAYS) {
+    for (const d of DAYS_SUN_START) {
       const arr = menusByDay.get(d.key) ?? [];
       out.push(...[...arr].sort((a, b) => a.order - b.order || a.updatedAt - b.updatedAt));
     }
@@ -508,7 +509,46 @@ export default function HomePage() {
           const activeId = String(e.active.id);
           const overId = e.over?.id ? String(e.over.id) : '';
           const m = /^insert-at:(\d+)$/.exec(overId);
-          const nextGap = m ? Number(m[1]) : null;
+          const overGap = m ? Number(m[1]) : null;
+
+          // Touch / Pointer のどちらでも、ドラッグ位置の Y 座標を拾う
+          const activatorEvent = e.activatorEvent as unknown as { clientY?: unknown; touches?: unknown; changedTouches?: unknown };
+          const clientY =
+            typeof activatorEvent?.clientY === 'number'
+              ? (activatorEvent.clientY as number)
+              : (activatorEvent as any)?.touches?.[0]?.clientY ??
+                (activatorEvent as any)?.changedTouches?.[0]?.clientY ??
+                null;
+
+          // カードの中心（上半分/下半分の境界）を越えたら入れ替える
+          let nextGap: number | null = overGap;
+          if (typeof clientY === 'number' && Number.isFinite(clientY) && flatMenusForDisplay.length > 0) {
+            const centers: number[] = [];
+            let ok = true;
+            for (const menu of flatMenusForDisplay) {
+              const escaped = globalThis.CSS?.escape ? globalThis.CSS.escape(menu.id) : menu.id.replace(/"/g, '\\"');
+              const el = document.querySelector<HTMLElement>(`[data-menu-id="${escaped}"]`);
+              if (!el) {
+                ok = false;
+                break;
+              }
+              const rect = el.getBoundingClientRect();
+              centers.push(rect.top + rect.height / 2);
+            }
+
+            if (ok) {
+              let found = false;
+              for (let i = 0; i < centers.length; i++) {
+                if (clientY < centers[i]) {
+                  nextGap = i;
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) nextGap = centers.length;
+            }
+          }
+
           setDragOverGapIndex(nextGap);
           // ドラッグ中に実際の順序も反映し、見た目をリアルタイムに入れ替える
           if (nextGap === null) return;
@@ -566,7 +606,7 @@ export default function HomePage() {
 
             <button
               type="button"
-              onClick={() => openCreate(0)}
+              onClick={() => openCreate(DAYS_SUN_START[0].key)}
               className="mt-4 w-full rounded-2xl border-2 border-dashed border-emerald-200/80 bg-emerald-50/30 py-3.5 text-sm font-semibold text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-50/60 dark:border-emerald-800/60 dark:bg-emerald-950/20 dark:text-emerald-200 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/40"
             >
               ＋ レシピを追加
@@ -597,7 +637,7 @@ export default function HomePage() {
                       onChange={(e) => setDraft((d) => ({ ...d, day: Number(e.target.value) as DayOfWeek }))}
                       className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-base dark:border-zinc-700 dark:bg-zinc-950"
                     >
-                      {DAYS.map((d) => (
+                      {DAYS_SUN_START.map((d) => (
                         <option key={d.key} value={d.key}>
                           {d.label}
                         </option>
@@ -819,7 +859,7 @@ export default function HomePage() {
               onChange={(e) => setDraft((d) => ({ ...d, day: Number(e.target.value) as DayOfWeek }))}
               className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
             >
-              {DAYS.map((d) => (
+              {DAYS_SUN_START.map((d) => (
                 <option key={d.key} value={d.key}>
                   {d.label}
                 </option>
@@ -1267,8 +1307,9 @@ function GlobalChecklistPanel({
 }) {
   const [text, setText] = useState('');
   const checkedCount = items.filter((i) => i.checked).length;
-  const accent = variant === 'shopping' ? 'amber' : 'violet';
-  const shellVariant = variant === 'shopping' ? 'amber' : 'violet';
+  // レシピカード内の食材チェックリストと揃えるため、買い物枠も emerald を使用
+  const accent = variant === 'shopping' ? 'emerald' : 'violet';
+  const shellVariant = variant === 'shopping' ? 'emerald' : 'violet';
 
   const add = () => {
     onAdd(text);
@@ -1301,17 +1342,23 @@ function GlobalChecklistPanel({
         <ChecklistList ariaLabel={title}>
           {items.map((i) => (
             <ChecklistListItem key={i.id}>
-              <ChecklistRow
-                id={`gcl-${variant}-${i.id}`}
-                checked={Boolean(i.checked)}
-                onChange={() => onToggle(i.id)}
-                label={i.text}
-                accent={accent}
-                ariaLabelChecked={`${i.text}のチェックを外す`}
-                ariaLabelUnchecked={
-                  variant === 'shopping' ? `${i.text}を買ったことにする` : `${i.text}を完了にする`
-                }
-              />
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <ChecklistRow
+                    id={`gcl-${variant}-${i.id}`}
+                    checked={Boolean(i.checked)}
+                    onChange={() => onToggle(i.id)}
+                    label={i.text}
+                    accent={accent}
+                    ariaLabelChecked={`${i.text}のチェックを外す`}
+                    ariaLabelUnchecked={
+                      variant === 'shopping'
+                        ? `${i.text}を買ったことにする`
+                        : `${i.text}を完了にする`
+                    }
+                  />
+                </div>
+              </div>
             </ChecklistListItem>
           ))}
         </ChecklistList>
@@ -1383,7 +1430,7 @@ function CollapsedMenuBar({
             style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2310b981'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.35rem center', backgroundSize: '0.65rem' }}
             aria-label="曜日を変更"
           >
-            {DAYS.map((d) => (
+            {DAYS_SUN_START.map((d) => (
               <option key={d.key} value={d.key}>
                 {d.label}
               </option>
