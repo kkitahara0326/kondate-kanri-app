@@ -216,6 +216,7 @@ export default function HomePage() {
   const [draft, setDraft] = useState<MenuDraft>(() => emptyDraft(DAYS_SUN_START[0].key));
   const [draftRecipeUrlInput, setDraftRecipeUrlInput] = useState('');
   const [draftIngredientInput, setDraftIngredientInput] = useState('');
+  const [draftIngredientChecked, setDraftIngredientChecked] = useState<boolean[]>([]);
   const [draftPendingImages, setDraftPendingImages] = useState<DraftPendingImage[]>([]);
   const [draftImageBusy, setDraftImageBusy] = useState(false);
   const [draftImageError, setDraftImageError] = useState<string | null>(null);
@@ -421,6 +422,30 @@ export default function HomePage() {
 
   const draftRecipeUrls = useMemo(() => parseUrls(draft.recipeUrlsText), [draft.recipeUrlsText]);
   const draftIngredients = useMemo(() => parseLines(draft.ingredientsText), [draft.ingredientsText]);
+
+  // 食材リスト行のチェック状態（「編集モーダル内の削除操作」用）
+  useEffect(() => {
+    setDraftIngredientChecked((prev) => {
+      const nextLen = draftIngredients.length;
+      if (prev.length === nextLen) return prev;
+      return new Array(nextLen).fill(false);
+    });
+  }, [draftIngredients.length, draft.ingredientsText]);
+
+  const toggleDraftIngredientCheckedAt = (idx: number) => {
+    setDraftIngredientChecked((prev) => {
+      if (idx < 0 || idx >= prev.length) return prev;
+      const next = [...prev];
+      next[idx] = !next[idx];
+      return next;
+    });
+  };
+
+  const removeCheckedDraftIngredients = () => {
+    const lines = parseLines(draft.ingredientsText);
+    const next = lines.filter((_, idx) => !draftIngredientChecked[idx]);
+    setDraft((d) => ({ ...d, ingredientsText: next.join('\n') }));
+  };
 
   return (
     <div className="min-h-[100svh] w-full overflow-x-hidden px-3 pb-8 pt-2 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
@@ -703,13 +728,31 @@ export default function HomePage() {
                       </button>
                     </div>
                     {draftIngredients.length > 0 ? (
-                      <ul className="mt-2 divide-y divide-zinc-200 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-700 dark:bg-zinc-950">
-                        {draftIngredients.map((item, idx) => (
-                          <li key={`${item}-${idx}`} className="flex items-start gap-2 px-3 py-2">
-                            <span className="min-w-0 flex-1 break-words text-sm leading-snug">{item}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      <>
+                        <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-100 pt-3">
+                          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">チェック済みを削除</p>
+                          <ChecklistBulkRemoveButton
+                            count={draftIngredientChecked.filter(Boolean).length}
+                            onClick={removeCheckedDraftIngredients}
+                            label="チェック済みを削除"
+                          />
+                        </div>
+                        <ul className="mt-2 divide-y divide-zinc-200 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-700 dark:bg-zinc-950">
+                          {draftIngredients.map((item, idx) => (
+                            <li key={`${item}-${idx}`}>
+                              <ChecklistRow
+                                id={`draft-ing-${idx}`}
+                                checked={Boolean(draftIngredientChecked[idx])}
+                                onChange={() => toggleDraftIngredientCheckedAt(idx)}
+                                label={item}
+                                accent="emerald"
+                                ariaLabelChecked={`${item}のチェックを外す`}
+                                ariaLabelUnchecked={`${item}を削除対象にする`}
+                              />
+                            </li>
+                          ))}
+                        </ul>
+                      </>
                     ) : null}
                   </div>
 
