@@ -31,7 +31,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { DayOfWeek, GlobalChecklistItem, MenuItem, RecipeImage } from '@/lib/types';
 import { prepareRecipeImageBlob } from '@/lib/image-compress';
 import { checkImageUploadGuard } from '@/lib/image-upload-policy';
-import { getRecipeImageBlob } from '@/lib/recipe-image-blobs';
+import { getRecipeImageBlob, getRecipeImageOriginalBlob } from '@/lib/recipe-image-blobs';
 import { DAYS, DAYS_SUN_START } from '@/lib/types';
 import { usePlannerSync } from '@/components/planner-sync-provider';
 import {
@@ -106,7 +106,13 @@ function emptyDraft(day: DayOfWeek): MenuDraft {
   return { title: '', day, recipeUrlsText: '', ingredientsText: '', notes: '' };
 }
 
-type DraftPendingImage = { id: string; name: string; blob: Blob; previewUrl: string };
+type DraftPendingImage = {
+  id: string;
+  name: string;
+  blob: Blob;
+  originalBlob: Blob;
+  previewUrl: string;
+};
 
 function parseLines(text: string): string[] {
   return text
@@ -315,7 +321,7 @@ export default function HomePage() {
       const uploadableDraftImages = draftPendingImages;
       if (draftPendingImages.length > 0) {
         const existingImageCount = data.menus.reduce((sum, m) => sum + (m.recipeImages?.length ?? 0), 0);
-        const maxBytes = Math.max(...draftPendingImages.map((p) => p.blob.size));
+        const maxBytes = Math.max(...draftPendingImages.map((p) => p.originalBlob.size));
         const guard = await checkImageUploadGuard({
           existingImageCount,
           nextFileBytes: maxBytes,
@@ -338,7 +344,11 @@ export default function HomePage() {
         notes: draft.notes,
         recipeUrls,
         ingredientTexts: ingredients,
-        recipeImageBlobs: uploadableDraftImages.map((p) => ({ name: p.name, blob: p.blob })),
+        recipeImageBlobs: uploadableDraftImages.map((p) => ({
+          name: p.name,
+          blob: p.blob,
+          originalBlob: p.originalBlob,
+        })),
       });
       if (menu) {
         for (const img of uploadableDraftImages) {
@@ -375,8 +385,11 @@ export default function HomePage() {
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
           : `pimg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const previewUrl = URL.createObjectURL(blob);
-      setDraftPendingImages((prev) => [...prev, { id, name: file.name || 'recipe-image.jpg', blob, previewUrl }]);
+      const previewUrl = URL.createObjectURL(file);
+      setDraftPendingImages((prev) => [
+        ...prev,
+        { id, name: file.name || 'recipe-image.jpg', blob, originalBlob: file, previewUrl },
+      ]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -1160,7 +1173,7 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
     setBusy(true);
     try {
       const blob = await prepareRecipeImageBlob(file);
-      await addRecipeImage(menu.id, { name: file.name || 'recipe-image.jpg', blob });
+      await addRecipeImage(menu.id, { name: file.name || 'recipe-image.jpg', blob, originalBlob: file });
     } finally {
       setBusy(false);
     }
@@ -1241,7 +1254,8 @@ function useRecipeImageDisplaySrc(menuId: string, img: RecipeImage | null): stri
         return;
       }
       if (img.localOnly) {
-        const blob = await getRecipeImageBlob(menuId, img.id);
+        const originalBlob = await getRecipeImageOriginalBlob(menuId, img.id);
+        const blob = originalBlob ?? (await getRecipeImageBlob(menuId, img.id));
         if (cancelled) return;
         if (!blob) {
           setDisplaySrc(null);

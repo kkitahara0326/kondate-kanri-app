@@ -1,6 +1,7 @@
 const DB_NAME = 'kondate-kanri-recipe-images';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'blobs';
+const STORE_ORIGINAL = 'original-blobs';
 
 function blobKey(menuId: string, imageId: string): string {
   return `${menuId}::${imageId}`;
@@ -13,6 +14,7 @@ function openDb(): Promise<IDBDatabase> {
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      if (!db.objectStoreNames.contains(STORE_ORIGINAL)) db.createObjectStore(STORE_ORIGINAL);
     };
     req.onsuccess = () => resolve(req.result);
   });
@@ -46,6 +48,34 @@ export async function getRecipeImageBlob(menuId: string, imageId: string): Promi
   }
 }
 
+export async function putRecipeImageOriginalBlob(menuId: string, imageId: string, blob: Blob): Promise<void> {
+  const db = await openDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_ORIGINAL, 'readwrite');
+      tx.objectStore(STORE_ORIGINAL).put(blob, blobKey(menuId, imageId));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+export async function getRecipeImageOriginalBlob(menuId: string, imageId: string): Promise<Blob | null> {
+  const db = await openDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_ORIGINAL, 'readonly');
+      const r = tx.objectStore(STORE_ORIGINAL).get(blobKey(menuId, imageId));
+      r.onsuccess = () => resolve((r.result as Blob | undefined) ?? null);
+      r.onerror = () => reject(r.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
 export async function deleteRecipeImageBlob(menuId: string, imageId: string): Promise<void> {
   const db = await openDb();
   try {
@@ -60,25 +90,43 @@ export async function deleteRecipeImageBlob(menuId: string, imageId: string): Pr
   }
 }
 
-export async function deleteRecipeImageBlobsForMenu(menuId: string): Promise<void> {
+export async function deleteRecipeImageOriginalBlob(menuId: string, imageId: string): Promise<void> {
   const db = await openDb();
   try {
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      const store = tx.objectStore(STORE);
-      const prefix = `${menuId}::`;
-      const range = IDBKeyRange.bound(prefix, `${prefix}\uffff`);
-      const req = store.openCursor(range);
-      req.onsuccess = () => {
-        const cursor = req.result;
-        if (cursor) {
-          cursor.delete();
-          cursor.continue();
-        }
-      };
+      const tx = db.transaction(STORE_ORIGINAL, 'readwrite');
+      tx.objectStore(STORE_ORIGINAL).delete(blobKey(menuId, imageId));
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+  } finally {
+    db.close();
+  }
+}
+
+export async function deleteRecipeImageBlobsForMenu(menuId: string): Promise<void> {
+  const db = await openDb();
+  try {
+    const deleteByPrefix = async (storeName: string) => {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        const prefix = `${menuId}::`;
+        const range = IDBKeyRange.bound(prefix, `${prefix}\uffff`);
+        const req = store.openCursor(range);
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (cursor) {
+            cursor.delete();
+            cursor.continue();
+          }
+        };
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    };
+    await deleteByPrefix(STORE);
+    await deleteByPrefix(STORE_ORIGINAL);
   } finally {
     db.close();
   }
