@@ -1385,13 +1385,13 @@ function RecipeImageLightbox({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 px-2 py-4"
+      className="fixed inset-0 z-[70] bg-black/95"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="画像プレビュー"
     >
-      <div className="absolute left-0 right-0 top-0 flex items-center justify-between px-3 py-2 text-white">
+      <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-3 py-2 text-white">
         <div className="text-xs font-medium">
           {safeIndex + 1} / {images.length}
         </div>
@@ -1405,7 +1405,7 @@ function RecipeImageLightbox({
       </div>
 
       <div
-        className="relative flex h-full w-full max-w-3xl items-center justify-center"
+        className="relative flex h-[100dvh] w-[100vw] items-center justify-center"
         onClick={(e) => e.stopPropagation()}
         onTouchStart={(e) => {
           const t = e.touches[0];
@@ -1430,7 +1430,7 @@ function RecipeImageLightbox({
           <img
             src={displaySrc}
             alt={current.name}
-            className="max-h-[82vh] w-auto max-w-full rounded-xl object-contain"
+            className="h-[100dvh] w-[100vw] object-contain"
           />
         ) : (
           <div className="rounded-xl bg-white/10 px-4 py-3 text-sm text-zinc-200">
