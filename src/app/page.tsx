@@ -1403,11 +1403,28 @@ function RecipeImageLightbox({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onClose, moveBy]);
 
+  useEffect(() => {
+    if (!open) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyTouchAction = body.style.touchAction;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    body.style.touchAction = 'pan-x';
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      body.style.touchAction = prevBodyTouchAction;
+    };
+  }, [open]);
+
   if (!open || !current) return null;
 
   return (
     <div
-      className="fixed inset-0 z-[70] bg-black/95"
+      className="fixed inset-0 z-[70] overflow-hidden overscroll-none bg-black/95"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
