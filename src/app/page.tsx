@@ -1374,6 +1374,11 @@ function RecipeImageLightbox({
   const displaySrc = useRecipeImageDisplaySrc(menuId, current);
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
+  const [imageAspect, setImageAspect] = useState<number | null>(null);
+  const [viewportAspect, setViewportAspect] = useState<number>(() => {
+    if (typeof window === 'undefined') return 1;
+    return window.innerWidth / Math.max(1, window.innerHeight);
+  });
 
   const moveBy = useCallback(
     (delta: number) => {
@@ -1419,6 +1424,30 @@ function RecipeImageLightbox({
       body.style.touchAction = prevBodyTouchAction;
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !displaySrc) return;
+    const img = new Image();
+    img.onload = () => {
+      const h = img.naturalHeight || 1;
+      setImageAspect((img.naturalWidth || 1) / h);
+    };
+    img.onerror = () => setImageAspect(null);
+    img.src = displaySrc;
+  }, [open, displaySrc]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onResize = () => {
+      setViewportAspect(window.innerWidth / Math.max(1, window.innerHeight));
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [open]);
+
+  const useCoverFit =
+    !!displaySrc && imageAspect !== null && Math.abs(imageAspect - viewportAspect) <= 0.08;
 
   if (!open || !current) return null;
 
@@ -1469,7 +1498,11 @@ function RecipeImageLightbox({
           <img
             src={displaySrc}
             alt={current.name}
-            className="mx-auto block h-[100dvh] w-auto max-w-full object-contain"
+            className={
+              useCoverFit
+                ? 'mx-auto block h-[100dvh] w-[100vw] object-cover object-top'
+                : 'mx-auto block h-[100dvh] w-auto max-w-full object-contain'
+            }
           />
         ) : (
           <div className="rounded-xl bg-white/10 px-4 py-3 text-sm text-zinc-200">
