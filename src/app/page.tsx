@@ -11,6 +11,7 @@ import {
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
   closestCenter,
   DndContext,
@@ -1436,8 +1437,9 @@ function RecipeImageLightbox({
   }, [open]);
 
   if (!open || !current) return null;
+  if (typeof document === 'undefined') return null;
 
-  return (
+  const overlay = (
     <div
       className="fixed inset-0 z-[70] overflow-hidden overscroll-none bg-zinc-100"
       onClick={onClose}
@@ -1510,6 +1512,8 @@ function RecipeImageLightbox({
       </div>
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }
 
 /** 各献立（メニュー）ごとの買い物チェックリスト。チェックすると買った印だけ付く */
