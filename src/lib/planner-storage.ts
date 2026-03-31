@@ -610,7 +610,7 @@ export async function addMenuWithDetails(input: {
       const imageTs = now();
       const imageId = nextId('rimg-');
       await putRecipeImageBlob(menuId, imageId, row.blob);
-      if (row.originalBlob && row.originalBlob.size > 0) {
+      if (row.originalBlob && row.originalBlob !== row.blob && row.originalBlob.size > 0) {
         await putRecipeImageOriginalBlob(menuId, imageId, row.originalBlob);
       }
       pendingUploads.push({ imageId, name, blob: row.blob, imageTs });
@@ -774,7 +774,7 @@ export async function addRecipeImage(
   const imageId = nextId('rimg-');
 
   await putRecipeImageBlob(menuId, imageId, input.blob);
-  if (input.originalBlob && input.originalBlob.size > 0) {
+  if (input.originalBlob && input.originalBlob !== input.blob && input.originalBlob.size > 0) {
     await putRecipeImageOriginalBlob(menuId, imageId, input.originalBlob);
   }
 
@@ -819,7 +819,7 @@ export async function applyMenuIngredientsAndRecipeImages(
       const imageTs = now();
       const imageId = nextId('rimg-');
       await putRecipeImageBlob(menuId, imageId, input.blob);
-      if (input.originalBlob && input.originalBlob.size > 0) {
+      if (input.originalBlob && input.originalBlob !== input.blob && input.originalBlob.size > 0) {
         await putRecipeImageOriginalBlob(menuId, imageId, input.originalBlob);
       }
       pendingUploads.push({ imageId, name, blob: input.blob, imageTs });

@@ -109,7 +109,6 @@ type DraftPendingImage = {
   id: string;
   name: string;
   blob: Blob;
-  originalBlob: Blob;
   previewUrl: string;
 };
 
@@ -320,7 +319,7 @@ export default function HomePage() {
       const uploadableDraftImages = draftPendingImages;
       if (draftPendingImages.length > 0) {
         const existingImageCount = data.menus.reduce((sum, m) => sum + (m.recipeImages?.length ?? 0), 0);
-        const maxBytes = Math.max(...draftPendingImages.map((p) => p.originalBlob.size));
+        const maxBytes = Math.max(...draftPendingImages.map((p) => p.blob.size));
         const guard = await checkImageUploadGuard({
           existingImageCount,
           nextFileBytes: maxBytes,
@@ -346,7 +345,6 @@ export default function HomePage() {
         recipeImageBlobs: uploadableDraftImages.map((p) => ({
           name: p.name,
           blob: p.blob,
-          originalBlob: p.originalBlob,
         })),
       });
       if (menu) {
@@ -386,7 +384,7 @@ export default function HomePage() {
       const previewUrl = URL.createObjectURL(file);
       setDraftPendingImages((prev) => [
         ...prev,
-        { id, name: file.name || 'recipe-image.jpg', blob: file, originalBlob: file, previewUrl },
+        { id, name: file.name || 'recipe-image.jpg', blob: file, previewUrl },
       ]);
     } catch (err) {
       console.error(err);
@@ -1170,7 +1168,7 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
     setError(null);
     setBusy(true);
     try {
-      await addRecipeImage(menu.id, { name: file.name || 'recipe-image.jpg', blob: file, originalBlob: file });
+      await addRecipeImage(menu.id, { name: file.name || 'recipe-image.jpg', blob: file });
     } finally {
       setBusy(false);
     }
