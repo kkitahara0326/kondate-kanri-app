@@ -1469,7 +1469,7 @@ function RecipeImageLightbox({
           <img
             src={displaySrc}
             alt={current.name}
-            className="mx-auto mt-10 block h-auto max-h-[calc(100dvh-3rem)] w-auto max-w-full object-contain object-top"
+            className="mx-auto block h-[100dvh] w-auto max-w-full object-contain"
           />
         ) : (
           <div className="rounded-xl bg-white/10 px-4 py-3 text-sm text-zinc-200">
