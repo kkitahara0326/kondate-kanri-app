@@ -1424,20 +1424,20 @@ function RecipeImageLightbox({
 
   return (
     <div
-      className="fixed inset-0 z-[70] overflow-hidden overscroll-none bg-black/95"
+      className="fixed inset-0 z-[70] overflow-hidden overscroll-none bg-zinc-100"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="画像プレビュー"
     >
-      <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-3 py-2 text-white">
+      <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-3 py-2 text-zinc-800">
         <div className="text-xs font-medium">
           {safeIndex + 1} / {images.length}
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-full bg-white/15 px-3 py-1.5 text-sm font-semibold backdrop-blur hover:bg-white/25"
+          className="rounded-full bg-zinc-800/10 px-3 py-1.5 text-sm font-semibold backdrop-blur hover:bg-zinc-800/20"
         >
           閉じる
         </button>
@@ -1466,19 +1466,11 @@ function RecipeImageLightbox({
         }}
       >
         {displaySrc ? (
-          <>
-            <img
-              src={displaySrc}
-              alt=""
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 h-[100dvh] w-[100vw] object-cover blur-2xl brightness-75"
-            />
-            <img
-              src={displaySrc}
-              alt={current.name}
-              className="relative z-[1] block h-full w-full object-contain"
-            />
-          </>
+          <img
+            src={displaySrc}
+            alt={current.name}
+            className="block h-full w-full object-contain"
+          />
         ) : (
           <div className="rounded-xl bg-white/10 px-4 py-3 text-sm text-zinc-200">
             画像を表示できません
