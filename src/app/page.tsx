@@ -3,6 +3,7 @@
 import {
   Fragment,
   memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -1141,6 +1142,7 @@ function RecipeUrlAdder({ menu }: { menu: MenuItem }) {
 function RecipeImageSection({ menu }: { menu: MenuItem }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const images = menu.recipeImages ?? [];
   const inputId = `recipe-image-input-${menu.id}`;
 
@@ -1164,6 +1166,15 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
     }
   };
 
+  useEffect(() => {
+    setViewerIndex((prev) => {
+      if (prev === null) return null;
+      if (images.length === 0) return null;
+      if (prev >= images.length) return images.length - 1;
+      return prev;
+    });
+  }, [images.length]);
+
   return (
     <div className="mt-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
       <ChecklistSectionHeader title="レシピ画像" accent="emerald" />
@@ -1185,23 +1196,46 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
       {error ? <p className="mt-2 text-xs font-medium text-rose-600 dark:text-rose-400">{error}</p> : null}
       {images.length > 0 ? (
         <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {images.map((img) => (
-            <RecipeImageCard key={img.id} menuId={menu.id} menu={menu} img={img} />
+          {images.map((img, index) => (
+            <RecipeImageCard
+              key={img.id}
+              menuId={menu.id}
+              img={img}
+              onOpen={() => setViewerIndex(index)}
+              onDelete={() => {
+                void removeRecipeImage(menu.id, img.id);
+              }}
+            />
           ))}
         </ul>
       ) : null}
+      <RecipeImageLightbox
+        open={viewerIndex !== null && images.length > 0}
+        menuId={menu.id}
+        images={images}
+        index={viewerIndex ?? 0}
+        onChangeIndex={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </div>
   );
 }
 
-function RecipeImageCard({ menuId, menu, img }: { menuId: string; menu: MenuItem; img: RecipeImage }) {
-  const [displaySrc, setDisplaySrc] = useState<string | null>(() => img.downloadUrl ?? img.dataUrl ?? null);
+function useRecipeImageDisplaySrc(menuId: string, img: RecipeImage | null): string | null {
+  const [displaySrc, setDisplaySrc] = useState<string | null>(() => {
+    if (!img) return null;
+    return img.downloadUrl ?? img.dataUrl ?? null;
+  });
 
   useEffect(() => {
     let objectUrl: string | null = null;
     let cancelled = false;
 
     const run = async () => {
+      if (!img) {
+        setDisplaySrc(null);
+        return;
+      }
       if (img.downloadUrl || img.dataUrl) {
         setDisplaySrc(img.downloadUrl ?? img.dataUrl ?? null);
         return;
@@ -1225,12 +1259,35 @@ function RecipeImageCard({ menuId, menu, img }: { menuId: string; menu: MenuItem
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [menuId, img.id, img.downloadUrl, img.dataUrl, img.localOnly]);
+  }, [menuId, img]);
+
+  return displaySrc;
+}
+
+function RecipeImageCard({
+  menuId,
+  img,
+  onOpen,
+  onDelete,
+}: {
+  menuId: string;
+  img: RecipeImage;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const displaySrc = useRecipeImageDisplaySrc(menuId, img);
 
   return (
     <li className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
       {displaySrc ? (
-        <img src={displaySrc} alt={img.name} className="h-28 w-full object-cover" />
+        <button
+          type="button"
+          onClick={onOpen}
+          className="block h-28 w-full overflow-hidden text-left"
+          aria-label={`${img.name}を拡大表示`}
+        >
+          <img src={displaySrc} alt={img.name} className="h-28 w-full object-cover" />
+        </button>
       ) : (
         <div className="flex h-28 w-full items-center justify-center bg-zinc-100 px-2 text-center text-[11px] leading-snug text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
           {img.localOnly ? 'この端末に保存された画像（他端末では表示されません）' : '画像を表示できません'}
@@ -1250,15 +1307,145 @@ function RecipeImageCard({ menuId, menu, img }: { menuId: string; menu: MenuItem
         )}
         <button
           type="button"
-          onClick={() => {
-            void removeRecipeImage(menu.id, img.id);
-          }}
+          onClick={onDelete}
           className="rounded-md px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
         >
           削除
         </button>
       </div>
     </li>
+  );
+}
+
+function RecipeImageLightbox({
+  open,
+  menuId,
+  images,
+  index,
+  onChangeIndex,
+  onClose,
+}: {
+  open: boolean;
+  menuId: string;
+  images: RecipeImage[];
+  index: number;
+  onChangeIndex: (next: number) => void;
+  onClose: () => void;
+}) {
+  const hasImages = images.length > 0;
+  const safeIndex = hasImages ? Math.max(0, Math.min(index, images.length - 1)) : 0;
+  const current = hasImages ? images[safeIndex] : null;
+  const displaySrc = useRecipeImageDisplaySrc(menuId, current);
+  const touchStartXRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
+
+  const moveBy = useCallback(
+    (delta: number) => {
+      if (images.length <= 1) return;
+      const raw = safeIndex + delta;
+      if (raw < 0) {
+        onChangeIndex(images.length - 1);
+        return;
+      }
+      if (raw >= images.length) {
+        onChangeIndex(0);
+        return;
+      }
+      onChangeIndex(raw);
+    },
+    [images.length, onChangeIndex, safeIndex]
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft') moveBy(-1);
+      if (e.key === 'ArrowRight') moveBy(1);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose, moveBy]);
+
+  if (!open || !current) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 px-2 py-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="画像プレビュー"
+    >
+      <div className="absolute left-0 right-0 top-0 flex items-center justify-between px-3 py-2 text-white">
+        <div className="text-xs font-medium">
+          {safeIndex + 1} / {images.length}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full bg-white/15 px-3 py-1.5 text-sm font-semibold backdrop-blur hover:bg-white/25"
+        >
+          閉じる
+        </button>
+      </div>
+
+      <div
+        className="relative flex h-full w-full max-w-3xl items-center justify-center"
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => {
+          const t = e.touches[0];
+          touchStartXRef.current = t?.clientX ?? null;
+          touchStartYRef.current = t?.clientY ?? null;
+        }}
+        onTouchEnd={(e) => {
+          const sx = touchStartXRef.current;
+          const sy = touchStartYRef.current;
+          touchStartXRef.current = null;
+          touchStartYRef.current = null;
+          const t = e.changedTouches[0];
+          if (sx === null || sy === null || !t) return;
+          const dx = t.clientX - sx;
+          const dy = t.clientY - sy;
+          if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
+          if (dx < 0) moveBy(1);
+          else moveBy(-1);
+        }}
+      >
+        {displaySrc ? (
+          <img
+            src={displaySrc}
+            alt={current.name}
+            className="max-h-[82vh] w-auto max-w-full rounded-xl object-contain"
+          />
+        ) : (
+          <div className="rounded-xl bg-white/10 px-4 py-3 text-sm text-zinc-200">
+            画像を表示できません
+          </div>
+        )}
+
+        {images.length > 1 ? (
+          <>
+            <button
+              type="button"
+              onClick={() => moveBy(-1)}
+              className="absolute left-1 top-1/2 -translate-y-1/2 rounded-full bg-black/45 px-3 py-2 text-xl font-bold text-white hover:bg-black/60"
+              aria-label="前の画像"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={() => moveBy(1)}
+              className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-black/45 px-3 py-2 text-xl font-bold text-white hover:bg-black/60"
+              aria-label="次の画像"
+            >
+              ›
+            </button>
+          </>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
