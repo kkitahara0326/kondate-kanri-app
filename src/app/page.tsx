@@ -1427,7 +1427,7 @@ function RecipeImageLightbox({
       </div>
 
       <div
-        className="relative flex h-[100dvh] w-[100vw] items-center justify-center"
+        className="relative flex h-[100dvh] w-full items-center justify-center overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         onTouchStart={(e) => {
           const t = e.touches[0];
@@ -1452,7 +1452,7 @@ function RecipeImageLightbox({
           <img
             src={displaySrc}
             alt={current.name}
-            className="h-[100dvh] w-[100vw] object-contain"
+            className="mx-auto block max-h-[100dvh] max-w-full object-contain"
           />
         ) : (
           <div className="rounded-xl bg-white/10 px-4 py-3 text-sm text-zinc-200">
