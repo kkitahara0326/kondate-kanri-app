@@ -675,24 +675,6 @@ function sanitizeFileName(name: string): string {
   return name.replace(/[^\w.\-]+/g, '_').slice(0, 120) || 'image.jpg';
 }
 
-/** Storage アップロードがネットワーク理由で終わらないと保存が永遠にブロックされるのを防ぐ */
-const RECIPE_IMAGE_STORAGE_TIMEOUT_MS = 20_000;
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const t = window.setTimeout(() => reject(new Error('timeout')), ms);
-    promise
-      .then((v) => {
-        window.clearTimeout(t);
-        resolve(v);
-      })
-      .catch((e) => {
-        window.clearTimeout(t);
-        reject(e);
-      });
-  });
-}
-
 function patchMenuRecipeImageWithRemoteUrl(
   menuId: string,
   imageId: string,
@@ -743,10 +725,10 @@ function scheduleRecipeImageCloudUpload(
       const fileName = sanitizeFileName(name);
       const storagePath = `recipe-images/${menuId}/${imageTs}-${imageId}-${fileName}`;
       const storageRef = ref(storage, storagePath);
-      const downloadUrl = await withTimeout(
-        uploadBytes(storageRef, blob, { contentType: 'image/jpeg' }).then(() => getDownloadURL(storageRef)),
-        RECIPE_IMAGE_STORAGE_TIMEOUT_MS
-      );
+      await uploadBytes(storageRef, blob, {
+        contentType: blob.type && blob.type.length > 0 ? blob.type : 'application/octet-stream',
+      });
+      const downloadUrl = await getDownloadURL(storageRef);
       const after = getPlannerData();
       const afterMenu = after.menus.find((m) => m.id === menuId);
       const afterImageExists = Boolean(afterMenu?.recipeImages?.some((img) => img.id === imageId));
