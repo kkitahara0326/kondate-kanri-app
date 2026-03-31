@@ -609,9 +609,13 @@ export async function addMenuWithDetails(input: {
       if (!guard.allowed) return null;
       const imageTs = now();
       const imageId = nextId('rimg-');
-      await putRecipeImageBlob(menuId, imageId, row.blob);
+      await putRecipeImageBlob(menuId, imageId, row.blob).catch(() => {
+        // iOS Safari 等で IndexedDB 保存に失敗しても、献立保存自体は継続する
+      });
       if (row.originalBlob && row.originalBlob !== row.blob && row.originalBlob.size > 0) {
-        await putRecipeImageOriginalBlob(menuId, imageId, row.originalBlob);
+        await putRecipeImageOriginalBlob(menuId, imageId, row.originalBlob).catch(() => {
+          // 元画像保存はベストエフォート
+        });
       }
       pendingUploads.push({ imageId, name, blob: row.blob, imageTs });
       const img: RecipeImage = { id: imageId, name, localOnly: true, createdAt: imageTs };
@@ -773,9 +777,13 @@ export async function addRecipeImage(
   const ts = now();
   const imageId = nextId('rimg-');
 
-  await putRecipeImageBlob(menuId, imageId, input.blob);
+  await putRecipeImageBlob(menuId, imageId, input.blob).catch(() => {
+    // 端末ストレージ制限でも操作を止めない
+  });
   if (input.originalBlob && input.originalBlob !== input.blob && input.originalBlob.size > 0) {
-    await putRecipeImageOriginalBlob(menuId, imageId, input.originalBlob);
+    await putRecipeImageOriginalBlob(menuId, imageId, input.originalBlob).catch(() => {
+      // 元画像保存はベストエフォート
+    });
   }
 
   const data = getPlannerData();
@@ -818,9 +826,13 @@ export async function applyMenuIngredientsAndRecipeImages(
       if (!guard.allowed) return null;
       const imageTs = now();
       const imageId = nextId('rimg-');
-      await putRecipeImageBlob(menuId, imageId, input.blob);
+      await putRecipeImageBlob(menuId, imageId, input.blob).catch(() => {
+        // IndexedDB 保存失敗時も献立作成は継続
+      });
       if (input.originalBlob && input.originalBlob !== input.blob && input.originalBlob.size > 0) {
-        await putRecipeImageOriginalBlob(menuId, imageId, input.originalBlob);
+        await putRecipeImageOriginalBlob(menuId, imageId, input.originalBlob).catch(() => {
+          // 元画像保存はベストエフォート
+        });
       }
       pendingUploads.push({ imageId, name, blob: input.blob, imageTs });
       const img: RecipeImage = { id: imageId, name, localOnly: true, createdAt: imageTs };
