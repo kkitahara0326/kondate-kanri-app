@@ -1430,17 +1430,16 @@ function RecipeImageLightbox({
       aria-modal="true"
       aria-label="画像プレビュー"
     >
-      <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-3 py-2 text-zinc-800">
-        <div className="text-xs font-medium">
-          {safeIndex + 1} / {images.length}
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full bg-zinc-800/10 px-3 py-1.5 text-sm font-semibold backdrop-blur hover:bg-zinc-800/20"
-        >
-          閉じる
-        </button>
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-3 top-3 z-20 rounded-full bg-zinc-800/15 px-3 py-1.5 text-sm font-semibold text-zinc-800 backdrop-blur hover:bg-zinc-800/25"
+      >
+        閉じる
+      </button>
+
+      <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-full bg-zinc-800/10 px-2.5 py-1 text-[11px] font-medium text-zinc-700">
+        {safeIndex + 1} / {images.length}
       </div>
 
       <div
