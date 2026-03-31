@@ -224,6 +224,7 @@ export default function HomePage() {
   const [draftPendingImages, setDraftPendingImages] = useState<DraftPendingImage[]>([]);
   const [draftImageBusy, setDraftImageBusy] = useState(false);
   const [draftImageError, setDraftImageError] = useState<string | null>(null);
+  const [saveMenuError, setSaveMenuError] = useState<string | null>(null);
   const [saveMenuSubmitting, setSaveMenuSubmitting] = useState(false);
 
   const menusByDay = useMemo(() => {
@@ -268,6 +269,7 @@ export default function HomePage() {
     setEditingMenuId(null);
     setDraft(emptyDraft(day));
     setDraftImageError(null);
+    setSaveMenuError(null);
     setDraftPendingImages((prev) => {
       for (const p of prev) URL.revokeObjectURL(p.previewUrl);
       return [];
@@ -277,6 +279,7 @@ export default function HomePage() {
 
   const openEdit = (menu: MenuItem) => {
     setDraftImageError(null);
+    setSaveMenuError(null);
     setDraftPendingImages((prev) => {
       for (const p of prev) URL.revokeObjectURL(p.previewUrl);
       return [];
@@ -293,8 +296,14 @@ export default function HomePage() {
   };
 
   const saveMenu = async () => {
+    setSaveMenuError(null);
     const recipeUrls = parseUrls(draft.recipeUrlsText);
     const ingredients = parseLines(draft.ingredientsText);
+    const title = draft.title.trim();
+    if (!title) {
+      setSaveMenuError('メニュー名を入力してください。');
+      return;
+    }
     if (editingMenuId) {
       const cur = getPlannerData().menus.find((m) => m.id === editingMenuId);
       if (cur && cur.day !== draft.day) {
@@ -302,7 +311,7 @@ export default function HomePage() {
         moveMenu(editingMenuId, draft.day, appendIndex);
       }
       updateMenu(editingMenuId, {
-        title: draft.title,
+        title,
         day: draft.day,
         notes: draft.notes,
         recipeUrls,
@@ -337,7 +346,7 @@ export default function HomePage() {
       }
 
       const menu = await addMenuWithDetails({
-        title: draft.title,
+        title,
         day: draft.day,
         notes: draft.notes,
         recipeUrls,
@@ -347,6 +356,10 @@ export default function HomePage() {
           blob: p.blob,
         })),
       });
+      if (!menu) {
+        setSaveMenuError('保存に失敗しました。入力内容を確認してください。');
+        return;
+      }
       if (menu) {
         for (const img of uploadableDraftImages) {
           URL.revokeObjectURL(img.previewUrl);
@@ -358,6 +371,9 @@ export default function HomePage() {
       setEditorOpen(false);
       setDraftRecipeUrlInput('');
       setDraftIngredientInput('');
+    } catch (err) {
+      console.error(err);
+      setSaveMenuError('保存に失敗しました。通信状況を確認して再試行してください。');
     } finally {
       setSaveMenuSubmitting(false);
     }
@@ -375,6 +391,7 @@ export default function HomePage() {
       return;
     }
     setDraftImageError(null);
+    setSaveMenuError(null);
     setDraftImageBusy(true);
     try {
       const id =
@@ -825,10 +842,14 @@ export default function HomePage() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-end gap-2 border-t border-zinc-200/70 pt-3 dark:border-zinc-700/70">
+                  {saveMenuError ? (
+                    <p className="mr-auto text-xs font-medium text-rose-600 dark:text-rose-400">{saveMenuError}</p>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {
                       setEditorOpen(false);
+                      setSaveMenuError(null);
                       setDraftRecipeUrlInput('');
                       setDraftIngredientInput('');
                       setDraftPendingImages((p) => {
@@ -943,8 +964,14 @@ export default function HomePage() {
         </div>
 
         <div className="mt-6 flex items-center justify-end gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+          {saveMenuError ? (
+            <p className="mr-auto text-xs font-medium text-rose-600 dark:text-rose-400">{saveMenuError}</p>
+          ) : null}
           <button
-            onClick={() => setEditorOpen(false)}
+            onClick={() => {
+              setEditorOpen(false);
+              setSaveMenuError(null);
+            }}
             className="rounded-xl px-4 py-2.5 text-sm font-semibold text-zinc-600 transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
             キャンセル
