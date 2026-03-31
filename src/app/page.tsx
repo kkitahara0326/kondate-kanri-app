@@ -29,7 +29,6 @@ import {
 } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import type { DayOfWeek, GlobalChecklistItem, MenuItem, RecipeImage } from '@/lib/types';
-import { prepareRecipeImageBlob } from '@/lib/image-compress';
 import { checkImageUploadGuard } from '@/lib/image-upload-policy';
 import { getRecipeImageBlob, getRecipeImageOriginalBlob } from '@/lib/recipe-image-blobs';
 import { DAYS, DAYS_SUN_START } from '@/lib/types';
@@ -380,7 +379,6 @@ export default function HomePage() {
     setDraftImageError(null);
     setDraftImageBusy(true);
     try {
-      const blob = await prepareRecipeImageBlob(file);
       const id =
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
@@ -388,7 +386,7 @@ export default function HomePage() {
       const previewUrl = URL.createObjectURL(file);
       setDraftPendingImages((prev) => [
         ...prev,
-        { id, name: file.name || 'recipe-image.jpg', blob, originalBlob: file, previewUrl },
+        { id, name: file.name || 'recipe-image.jpg', blob: file, originalBlob: file, previewUrl },
       ]);
     } catch (err) {
       console.error(err);
@@ -1172,8 +1170,7 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
     setError(null);
     setBusy(true);
     try {
-      const blob = await prepareRecipeImageBlob(file);
-      await addRecipeImage(menu.id, { name: file.name || 'recipe-image.jpg', blob, originalBlob: file });
+      await addRecipeImage(menu.id, { name: file.name || 'recipe-image.jpg', blob: file, originalBlob: file });
     } finally {
       setBusy(false);
     }
