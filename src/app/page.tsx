@@ -1256,7 +1256,12 @@ function RecipeImageSection({ menu }: { menu: MenuItem }) {
   );
 }
 
-function useRecipeImageDisplaySrc(menuId: string, img: RecipeImage | null): string | null {
+function useRecipeImageDisplaySrc(
+  menuId: string,
+  img: RecipeImage | null,
+  opts?: { preferIndexedDb?: boolean }
+): string | null {
+  const preferIndexedDb = Boolean(opts?.preferIndexedDb);
   const [displaySrc, setDisplaySrc] = useState<string | null>(() => {
     if (!img) return null;
     return img.downloadUrl ?? img.dataUrl ?? null;
@@ -1271,21 +1276,31 @@ function useRecipeImageDisplaySrc(menuId: string, img: RecipeImage | null): stri
         setDisplaySrc(null);
         return;
       }
+      const loadFromIndexedDb = async (): Promise<boolean> => {
+        const originalBlob = await getRecipeImageOriginalBlob(menuId, img.id);
+        const blob = originalBlob ?? (await getRecipeImageBlob(menuId, img.id));
+        if (cancelled) return true;
+        if (!blob) {
+          return false;
+        }
+        objectUrl = URL.createObjectURL(blob);
+        setDisplaySrc(objectUrl);
+        return true;
+      };
+
+      if (preferIndexedDb) {
+        const loaded = await loadFromIndexedDb();
+        if (loaded) return;
+      }
+
       if (img.downloadUrl || img.dataUrl) {
         setDisplaySrc(img.downloadUrl ?? img.dataUrl ?? null);
         return;
       }
-      if (img.localOnly) {
-        const originalBlob = await getRecipeImageOriginalBlob(menuId, img.id);
-        const blob = originalBlob ?? (await getRecipeImageBlob(menuId, img.id));
-        if (cancelled) return;
-        if (!blob) {
-          setDisplaySrc(null);
-          return;
-        }
-        objectUrl = URL.createObjectURL(blob);
-        setDisplaySrc(objectUrl);
-        return;
+
+      if (img.localOnly || preferIndexedDb) {
+        const loaded = await loadFromIndexedDb();
+        if (loaded) return;
       }
       setDisplaySrc(null);
     };
@@ -1295,7 +1310,7 @@ function useRecipeImageDisplaySrc(menuId: string, img: RecipeImage | null): stri
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [menuId, img]);
+  }, [menuId, img, preferIndexedDb]);
 
   return displaySrc;
 }
@@ -1371,7 +1386,7 @@ function RecipeImageLightbox({
   const hasImages = images.length > 0;
   const safeIndex = hasImages ? Math.max(0, Math.min(index, images.length - 1)) : 0;
   const current = hasImages ? images[safeIndex] : null;
-  const displaySrc = useRecipeImageDisplaySrc(menuId, current);
+  const displaySrc = useRecipeImageDisplaySrc(menuId, current, { preferIndexedDb: true });
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
 
@@ -1437,10 +1452,6 @@ function RecipeImageLightbox({
       >
         閉じる
       </button>
-
-      <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-full bg-zinc-800/10 px-2.5 py-1 text-[11px] font-medium text-zinc-700">
-        {safeIndex + 1} / {images.length}
-      </div>
 
       <div
         className="relative flex h-[100dvh] w-full items-center justify-center overflow-hidden"
