@@ -1471,12 +1471,12 @@ function RecipeImageLightbox({
               src={displaySrc}
               alt=""
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 h-[100dvh] w-[100vw] scale-110 object-cover blur-2xl brightness-75"
+              className="pointer-events-none absolute inset-0 h-[100dvh] w-[100vw] object-cover blur-2xl brightness-75"
             />
             <img
               src={displaySrc}
               alt={current.name}
-              className="relative z-[1] mx-auto block h-[100dvh] w-auto max-w-full object-contain object-top"
+              className="relative z-[1] block h-full w-full object-contain"
             />
           </>
         ) : (
